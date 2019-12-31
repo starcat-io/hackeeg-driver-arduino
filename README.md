@@ -1,6 +1,6 @@
-# ADS129x-tools
+# HackEEG Arduino Driver
 
-This is the Arduino driver code for the [HackEEG Arduino Due shield]() for the [TI ADS1299](http://www.ti.com/product/ads1299) EEG system-on-a-chip.
+This is the Arduino driver code for the [HackEEG Arduino Due shield](https://github.com/starcat-io/hackeeg-shield) for the [TI ADS1299](http://www.ti.com/product/ads1299) EEG system-on-a-chip.
   
 The [TI ADS1299](http://www.ti.com/product/ads1299) is a 24-bit 8-channel ADC meant specifically for EEG, with 24x programmable gain amplifiers and much of the analog circuitry needed for EEG. It is capable of digitizing 16,000 samples per second at 24 bit resolution. The ADS1299-4 is a 4-channel version of the ADS1299; the ADS1299-6 is a 6-channel version.
 
