@@ -1,18 +1,12 @@
 # ADS129x-tools
 
-This is a collection of software for working with the TI ADS129x series of analog to digital
-converter chips.
-
+This is the Arduino driver code for the [HackEEG Arduino Due shield]() for the [TI ADS1299](http://www.ti.com/product/ads1299) EEG system-on-a-chip.
+  
 The [TI ADS1299](http://www.ti.com/product/ads1299) is a 24-bit 8-channel ADC meant specifically for EEG, with 24x programmable gain amplifiers and much of the analog circuitry needed for EEG. It is capable of digitizing 16,000 samples per second at 24 bit resolution. The ADS1299-4 is a 4-channel version of the ADS1299; the ADS1299-6 is a 6-channel version.
-
-The [TI ADS1298](http://www.ti.com/product/ads1298) is a 24-bit, 8-channel ADC chip with SPI interface, and 12x programmable gain amplifiers,
-meant for ECG and EEG. The ADS1294 is a 4-channel version; ADS1296 is a 6 channel version. 
-
-The ADS1299 and ADS1298 family of chips are ideally suited for digitizing biological signals.
 
 ## Arduino drivers
 
-The ads129x-driver/ directory contains an Arduino sketch and associated C/C++ files that make up a driver for ADS129x chips. So far it has only been tested on the ADS1299 and ADS1298, but should work on the other models. This driver has been tested on the Arduino Due and Mega2560, but should also work on other Arduinos. The DMA mode can only be used on the Arduino Due.
+The src/ directory contains an Arduino sketch and associated C/C++ files that make up a driver for ADS129x chips. So far it has only been tested on the ADS1299, but should work on the other models. This driver has been tested on the Arduino Due and Mega2560, but should also work on other Arduinos. The DMA mode can only be used on the Arduino Due.
 
 The driver has a text-mode interface, so can be used without any client software – just open up a serial port to the SAM3X8E native USB port (line endings NL+CR). It also has a JSONLines mode for easy parsing by client programs and a MessagePack mode for efficient binary communication. 
 
@@ -275,30 +269,22 @@ The packed byte-array used for `rdata` and `rdatac` transfers has this format:
 * For an example Python decoding function, see [`_decode_data()`](https://github.com/adamfeuer/ADS129x-tools/blob/master/ads129x_client/hackeeg/driver.py#L123-L152) in the file `hackeeg/driver.py`.
 
 
-## Python Client Software
+## HackEEG Python Client Software
 
-The Python client software is designed to run on a laptop computer. There is a `hackeeg` driver Python module for communicating with the Arduino over the USB serial port, a command line client (`hackeeg_shell` wrapper and `hackeeg_shell.py` Python client), and a demonstration and performance testing script (`hackeeg_test.py`). 
-
-The `hackeeg_shell.py` and `hackeeg_test.py` programs set the Arduino driver to JSON Lines mode, and communicate with it that way. They issue JSON Lines commands to the Arduino, and recieve JSON Lines or MessagePack data in response.
-
-Using Python 3.6.5 on a 2017 Retina Macbook Pro, connected to an Arduino Due configured to use the SPI DMA included in the driver, and using the MessagePack mode, the `hackeeg_test.py` program can read and transfer 8 channels of 24-bit resolution data at 16,384 samples per second, the maximum rate of the ADS1299 chip.
-
-The Python client software requires the [PySerial](https://github.com/pyserial/pyserial) module.
+There is [HackEEG Python client software](https://github.com/starcat-io/hackeeg-client-python) that can run on macOS, Linux, and Windows, and stream data 
+to [Lab Streaming Layer](https://github.com/sccn/labstreaminglayer) at 16,000 samples per second.
 
 ## Hardware
 
-If you are looking for a full Arduino shield with analog input capability, you might
-be interested in the [HackEEG Shield](https://github.com/adamfeuer/hackeeg-shield).
-The HackEEG shield is designed for use with the ADS1299.
-
-For prototyping software, the [ADS1298 breakout board](https://github.com/adamfeuer/ADS1298-breakout) might be useful. It is designed for the ADS1298, but should also work with the ADS1294, ADS1296, or ADS1299.
-
+If you are looking for a full Arduino shield with analog input capability, you might be interested in the 
+[HackEEG Shield](https://github.com/adamfeuer/hackeeg-shield). The HackEEG shield is designed for use with the ADS1299.
 
 ## Credits
 
 This software would not be possible without the help of many people:
 
-* Kendrick Shaw, Ace Medlock, and Eric Herman (parts of the ADS129x.h header file and some parts of the ADS129x driver, see [OpenHardwareExG project](https://github.com/OpenElectronicsLab/OpenHardwareExG) for more info.
+* Kendrick Shaw, Ace Medlock, and Eric Herman (parts of the ADS129x.h header file and some parts of the ADS129x driver, 
+* see [OpenHardwareExG project](https://github.com/OpenElectronicsLab/OpenHardwareExG) for more info.
 * Chris Rorden (some parts of the ADS1298 driver)
 * Stefan Rado (SerialCommand library)
 * Steven Cogswell (SerialCommand library)
