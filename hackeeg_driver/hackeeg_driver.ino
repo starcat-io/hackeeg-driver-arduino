@@ -1,8 +1,8 @@
 /*
-   Driver for TI ADS129x
+   Driver for HackEEG TI ADS1299 shield
    for Arduino Due and Arduino Mega2560
 
-   Copyright (c) 2013-2019 by Adam Feuer <adam@adamfeuer.com>
+   Copyright © 2013-2020 Starcat LLC / Adam Feuer <adam@starcat.io>
 
    This library is free software: you can redistribute it and/or modify
    it under the terms of the GNU Lesser General Public License as published by
@@ -35,6 +35,7 @@
 
 #define SPI_BUFFER_SIZE 200
 #define OUTPUT_BUFFER_SIZE 1000
+#define MAX_BOARDS 4
 
 #define TEXT_MODE 0
 #define JSONLINES_MODE 1
@@ -54,9 +55,6 @@ const char *STATUS_TEXT_NOT_IMPLEMENTED = "Not Implemented";
 const char *STATUS_TEXT_NO_ACTIVE_CHANNELS = "No Active Channels";
 
 int protocol_mode = TEXT_MODE;
-int max_channels = 0;
-int num_active_channels = 0;
-boolean active_channels[9]; // reports whether channels 1..9 are active
 int num_spi_bytes = 0;
 int num_timestamped_spi_bytes = 0;
 boolean is_rdatac = false;
@@ -78,9 +76,16 @@ union {
     unsigned long sample_number = 0;
 } sample_number_union;
 
-// SPI input buffer
-uint8_t spi_bytes[SPI_BUFFER_SIZE];
-uint8_t spi_data_available;
+struct HackEegBoard {
+    uint8_t spi_bytes[SPI_BUFFER_SIZE]; // SPI input buffer
+    uint8_t spi_data_available;         // is DRDY active?
+    int max_channels;
+    int num_active_channels;
+    boolean active_channels[8];         // reports whether channels 1..8 are active
+};
+
+HackEegBoard boards[MAX_BOARDS];
+int current_board = 0;
 
 // char buffer to send via USB
 char output_buffer[OUTPUT_BUFFER_SIZE];
@@ -88,8 +93,7 @@ char output_buffer[OUTPUT_BUFFER_SIZE];
 const char *hardware_type = "unknown";
 const char *board_name = "HackEEG";
 const char *maker_name = "Starcat LLC";
-const char *driver_version = "v0.3.0";
-
+const char *driver_version = "v0.4.0";
 
 const char *json_rdatac_header= "{\"C\":200,\"D\":\"";
 const char *json_rdatac_footer= "\"}";
@@ -297,9 +301,9 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
         WiredSerial.print("Hardware type: ");
         WiredSerial.println(hardware_type);
         WiredSerial.print("Max channels: ");
-        WiredSerial.println(max_channels);
+        WiredSerial.println(boards[current_board].max_channels);
         WiredSerial.print("Number of active channels: ");
-        WiredSerial.println(num_active_channels);
+        WiredSerial.println(boards[current_board].num_active_channels);
         WiredSerial.println();
         return;
     }
@@ -312,8 +316,8 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
     status_info["board_name"] = board_name;
     status_info["maker_name"] = maker_name;
     status_info["hardware_type"] = hardware_type;
-    status_info["max_channels"] = max_channels;
-    status_info["active_channels"] = num_active_channels;
+    status_info["boards[current_board].max_channels"] = boards[current_board].max_channels;
+    status_info["active_channels"] = boards[current_board].num_active_channels;
     switch (protocol_mode) {
         case JSONLINES_MODE:
         case MESSAGEPACK_MODE:
@@ -540,7 +544,7 @@ void rdataCommand(unsigned char unused1, unsigned char unused2) {
 void rdatacCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
     detectActiveChannels();
-    if (num_active_channels > 0) {
+    if (boards[current_board].num_active_channels > 0) {
         is_rdatac = true;
         adcSendCommand(RDATAC);
         send_response_ok();
@@ -573,26 +577,26 @@ void unrecognizedJsonLines(const char *command) {
 }
 
 void detectActiveChannels() {  //set device into RDATAC (continous) mode -it will stream data
-    if ((is_rdatac) || (max_channels < 1)) return; //we can not read registers when in RDATAC mode
+    if ((is_rdatac) || (boards[current_board].max_channels < 1)) return; //we can not read registers when in RDATAC mode
     //Serial.println("Detect active channels: ");
     using namespace ADS129x;
-    num_active_channels = 0;
-    for (int i = 1; i <= max_channels; i++) {
+    boards[current_board].num_active_channels = 0;
+    for (int i = 1; i <= boards[current_board].max_channels; i++) {
         delayMicroseconds(1);
         int chSet = adcRreg(CHnSET + i);
-        active_channels[i] = ((chSet & 7) != SHORTED);
-        if ((chSet & 7) != SHORTED) num_active_channels++;
+        boards[current_board].active_channels[i] = ((chSet & 7) != SHORTED);
+        if ((chSet & 7) != SHORTED) boards[current_board].num_active_channels++;
     }
 }
 
 void drdy_interrupt() {
-    spi_data_available = 1;
+    boards[current_board].spi_data_available = 1;
 }
 
 inline void send_samples(void) {
     if (!is_rdatac) return;
-    if (spi_data_available) {
-        spi_data_available = 0;
+    if (boards[current_board].spi_data_available) {
+        boards[current_board].spi_data_available = 0;
         receive_sample();
         send_sample();
     }
@@ -601,18 +605,18 @@ inline void send_samples(void) {
 inline void receive_sample() {
     digitalWrite(PIN_CS, LOW);
     delayMicroseconds(10);
-    memset(spi_bytes, 0, sizeof(spi_bytes));
+    memset(boards[current_board].spi_bytes, 0, sizeof(boards[current_board].spi_bytes));
     timestamp_union.timestamp = micros();
-    spi_bytes[0] = timestamp_union.timestamp_bytes[0];
-    spi_bytes[1] = timestamp_union.timestamp_bytes[1];
-    spi_bytes[2] = timestamp_union.timestamp_bytes[2];
-    spi_bytes[3] = timestamp_union.timestamp_bytes[3];
-    spi_bytes[4] = sample_number_union.sample_number_bytes[0];
-    spi_bytes[5] = sample_number_union.sample_number_bytes[1];
-    spi_bytes[6] = sample_number_union.sample_number_bytes[2];
-    spi_bytes[7] = sample_number_union.sample_number_bytes[3];
+    boards[current_board].spi_bytes[0] = timestamp_union.timestamp_bytes[0];
+    boards[current_board].spi_bytes[1] = timestamp_union.timestamp_bytes[1];
+    boards[current_board].spi_bytes[2] = timestamp_union.timestamp_bytes[2];
+    boards[current_board].spi_bytes[3] = timestamp_union.timestamp_bytes[3];
+    boards[current_board].spi_bytes[4] = sample_number_union.sample_number_bytes[0];
+    boards[current_board].spi_bytes[5] = sample_number_union.sample_number_bytes[1];
+    boards[current_board].spi_bytes[6] = sample_number_union.sample_number_bytes[2];
+    boards[current_board].spi_bytes[7] = sample_number_union.sample_number_bytes[3];
 
-    uint8_t returnCode = spiRec(spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES, num_spi_bytes);
+    uint8_t returnCode = spiRec(boards[current_board].spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES, num_spi_bytes);
 
     digitalWrite(PIN_CS, HIGH);
     sample_number_union.sample_number++;
@@ -622,16 +626,16 @@ inline void send_sample(void) {
     switch (protocol_mode) {
         case JSONLINES_MODE:
             WiredSerial.write(json_rdatac_header);
-            base64_encode(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+            base64_encode(output_buffer, (char *) boards[current_board].spi_bytes, num_timestamped_spi_bytes);
             WiredSerial.write(output_buffer);
             WiredSerial.write(json_rdatac_footer);
             WiredSerial.write("\n");
             break;
         case TEXT_MODE:
             if (base64_mode) {
-                base64_encode(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+                base64_encode(output_buffer, (char *) boards[current_board].spi_bytes, num_timestamped_spi_bytes);
             } else {
-                encode_hex(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+                encode_hex(output_buffer, (char *) boards[current_board].spi_bytes, num_timestamped_spi_bytes);
             }
             WiredSerial.println(output_buffer);
             break;
@@ -648,7 +652,7 @@ inline void send_sample_json(int num_bytes) {
     root[STATUS_CODE_KEY] = STATUS_OK;
     root[STATUS_TEXT_KEY] = STATUS_TEXT_OK;
     JsonArray data = root.createNestedArray(DATA_KEY);
-    copyArray(spi_bytes, num_bytes, data);
+    copyArray(boards[current_board].spi_bytes, num_bytes, data);
     jsonCommand.sendJsonLinesDocResponse(doc);
 }
 
@@ -656,13 +660,13 @@ inline void send_sample_json(int num_bytes) {
 inline void send_sample_messagepack(int num_bytes) {
     WiredSerial.write(messagepack_rdatac_header, messagepack_rdatac_header_size);
     WiredSerial.write((uint8_t) num_bytes);
-    WiredSerial.write(spi_bytes, num_bytes);
+    WiredSerial.write(boards[current_board].spi_bytes, num_bytes);
 }
 
 void adsSetup() { //default settings for ADS1298 and compatible chips
     using namespace ADS129x;
     // Send SDATAC Command (Stop Read Data Continuously mode)
-    spi_data_available = 0;
+    boards[current_board].spi_data_available = 0;
     attachInterrupt(digitalPinToInterrupt(IPIN_DRDY), drdy_interrupt, FALLING);
     adcSendCommand(SDATAC);
     delay(1000); //pause to provide ads129n enough time to boot up...
@@ -672,34 +676,34 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
     switch (val & B00011111) {
         case B10000:
             hardware_type = "ADS1294";
-            max_channels = 4;
+            boards[current_board].max_channels = 4;
             break;
         case B10001:
             hardware_type = "ADS1296";
-            max_channels = 6;
+            boards[current_board].max_channels = 6;
             break;
         case B10010:
             hardware_type = "ADS1298";
-            max_channels = 8;
+            boards[current_board].max_channels = 8;
             break;
         case B11110:
             hardware_type = "ADS1299";
-            max_channels = 8;
+            boards[current_board].max_channels = 8;
             break;
         case B11100:
             hardware_type = "ADS1299-4";
-            max_channels = 4;
+            boards[current_board].max_channels = 4;
             break;
         case B11101:
             hardware_type = "ADS1299-6";
-            max_channels = 6;
+            boards[current_board].max_channels = 6;
             break;
         default:
-            max_channels = 0;
+            boards[current_board].max_channels = 0;
     }
-    num_spi_bytes = (3 * (max_channels + 1)); //24-bits header plus 24-bits per channel
+    num_spi_bytes = (3 * (boards[current_board].max_channels + 1)); //24-bits header plus 24-bits per channel
     num_timestamped_spi_bytes = num_spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES;
-    if (max_channels == 0) { //error mode
+    if (boards[current_board].max_channels == 0) { //error mode
         while (1) {
             digitalWrite(PIN_LED, HIGH);
             delay(500);
