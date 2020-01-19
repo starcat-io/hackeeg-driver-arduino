@@ -1,7 +1,7 @@
 /*
  * adsCommand.h
  *
- * Copyright (c) 2013-2019 by Adam Feuer <adam@adamfeuer.com>
+ * Copyright © 2013-2020 Starcat LLC / Adam Feuer <adam@starcat.io>
  *
  * This library is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -32,12 +32,22 @@ const int PIN_CLKSEL = 48;
 const int IPIN_RESET = 47;
 
 const int PIN_START = 59;
-const int IPIN_DRDY = 25;
-const int PIN_CS = 4;
+const int IPIN_DRDY = 24;
+const int PIN_CS = 23;
+
+// for multiple boards
+#define MAX_BOARDS 4
+
+extern uint8_t current_board;
+extern uint8_t cs_pins[MAX_BOARDS];
+extern uint8_t drdy_pins[MAX_BOARDS];
+
 //const int PIN_DOUT = 11;  //SPI out
 //const int PIN_DIN = 12;   //SPI in
 //const int PIN_SCLK = 13;  //SPI clock
 
+void csLow();
+void csHigh();
 void adcWreg(int reg, int val);
 void adcSendCommand(int cmd);
 void adcSendCommandLeaveCsActive(int cmd);

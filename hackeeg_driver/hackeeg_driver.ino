@@ -35,7 +35,6 @@
 
 #define SPI_BUFFER_SIZE 200
 #define OUTPUT_BUFFER_SIZE 1000
-#define MAX_BOARDS 4
 
 #define TEXT_MODE 0
 #define JSONLINES_MODE 1
@@ -85,7 +84,6 @@ struct HackEegBoard {
 };
 
 HackEegBoard boards[MAX_BOARDS];
-int current_board = 0;
 
 // char buffer to send via USB
 char output_buffer[OUTPUT_BUFFER_SIZE];
@@ -603,7 +601,7 @@ inline void send_samples(void) {
 }
 
 inline void receive_sample() {
-    digitalWrite(PIN_CS, LOW);
+    csLow();
     delayMicroseconds(10);
     memset(boards[current_board].spi_bytes, 0, sizeof(boards[current_board].spi_bytes));
     timestamp_union.timestamp = micros();
@@ -618,7 +616,7 @@ inline void receive_sample() {
 
     uint8_t returnCode = spiRec(boards[current_board].spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES, num_spi_bytes);
 
-    digitalWrite(PIN_CS, HIGH);
+    csHigh();
     sample_number_union.sample_number++;
 }
 
@@ -721,21 +719,20 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
 void arduinoSetup() {
     pinMode(PIN_LED, OUTPUT);
     using namespace ADS129x;
-    // prepare pins to be outputs or inputs
-    //pinMode(PIN_SCLK, OUTPUT); //optional - SPI library will do this for us
-    //pinMode(PIN_DIN, OUTPUT); //optional - SPI library will do this for us
-    //pinMode(PIN_DOUT, INPUT); //optional - SPI library will do this for us
-    //pinMode(PIN_CS, OUTPUT);
+
     pinMode(PIN_START, OUTPUT);
-    pinMode(IPIN_DRDY, INPUT);
+    for (int i=0; i< MAX_BOARDS; i++) {
+        pinMode(drdy_pins[i], INPUT);
+    }
+
     pinMode(PIN_CLKSEL, OUTPUT);// *optional
     pinMode(IPIN_RESET, OUTPUT);// *optional
     //pinMode(IPIN_PWDN, OUTPUT);// *optional
     digitalWrite(PIN_CLKSEL, HIGH); // internal clock
-    //start Serial Peripheral Interface
-    spiBegin(PIN_CS);
+    spiBegin(cs_pins[current_board]);
     spiInit(MSBFIRST, SPI_MODE1, SPI_CLOCK_DIVIDER);
-    //Start ADS1298
+
+    // Start ADS1299
     delay(500); //wait for the ads129n to be ready - it can take a while to charge caps
     digitalWrite(PIN_CLKSEL, HIGH);// *optional
     delay(10); // wait for oscillator to wake up

@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "Arduino.h"
+#include "adsCommand.h"
 
 #define USE_ARDUINO_SPI_LIBRARY 1
 #define USE_NATIVE_SAM3X_SPI 0
@@ -30,13 +31,16 @@
 
 void spiBegin(uint8_t csPin) {
     SPI.begin();
-    pinMode(csPin, OUTPUT);
 }
 
 void spiInit(uint8_t bitOrder, uint8_t spiMode, uint8_t spiClockDivider) {
     SPI.setBitOrder((BitOrder) bitOrder);  // MSBFIRST or LSBFIRST
     SPI.setDataMode(spiMode);             // SPI_MODE0, SPI_MODE1; SPI_MODE2; SPI_MODE3
     SPI.setClockDivider(spiClockDivider);
+    for (int i=0; i< MAX_BOARDS; i++) {
+        pinMode(cs_pins[i], OUTPUT);
+    }
+
 }
 
 /** SPI receive a byte */

@@ -1,7 +1,7 @@
 /**
  * send and receive commands from TI ADS129x chips.
  *
- * Copyright (c) 2013 by Adam Feuer <adam@adamfeuer.com>
+ * Copyright © 2013-2020 Starcat LLC / Adam Feuer <adam@starcat.io>
  *
  * This library is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -23,50 +23,52 @@
 #include "ads129x.h"
 #include "SpiDma.h"
 
-/*void wait_for_drdy(int interval)
-{
-	int i = 0;
-	while (digitalRead(IPIN_DRDY) == HIGH) {
-		if (i < interval) {
-			continue;
-		}
-		i = 0;
-	}
-}*/
+// for multiple boards
+uint8_t current_board = 0;
+uint8_t cs_pins[MAX_BOARDS] = {23, 52, 10, 4};
+uint8_t drdy_pins[MAX_BOARDS] = {24, 25, 26, 27};
+
+void csLow() {
+    digitalWrite(cs_pins[current_board], LOW);
+}
+
+void csHigh() {
+    digitalWrite(cs_pins[current_board], HIGH);
+}
 
 void adcSendCommand(int cmd) {
-    digitalWrite(PIN_CS, LOW);
+    csLow();
     spiSend(cmd);
     delayMicroseconds(1);
-    digitalWrite(PIN_CS, HIGH);
+    csHigh();
 }
 
 void adcSendCommandLeaveCsActive(int cmd) {
-    digitalWrite(PIN_CS, LOW);
+    csLow();
     spiSend(cmd);
 }
 
 void adcWreg(int reg, int val) {
-    //see pages 40,43 of datasheet -
-    digitalWrite(PIN_CS, LOW);
+    // see pages 40,43 of datasheet -
+    csLow();
     spiSend(ADS129x::WREG | reg);
     delayMicroseconds(2);
     spiSend(0);    // number of registers to be read/written – 1
     delayMicroseconds(2);
     spiSend(val);
     delayMicroseconds(1);
-    digitalWrite(PIN_CS, HIGH);
+    csHigh();
 }
 
 int adcRreg(int reg) {
     uint8_t out = 0;
-    digitalWrite(PIN_CS, LOW);
+    csLow();
     spiSend(ADS129x::RREG | reg);
     delayMicroseconds(2);
     spiSend(0);    // number of registers to be read/written – 1
     delayMicroseconds(2);
     out = spiRec();
     delayMicroseconds(1);
-    digitalWrite(PIN_CS, HIGH);
+    csHigh();
     return ((int) out);
 }

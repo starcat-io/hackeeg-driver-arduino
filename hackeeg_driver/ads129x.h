@@ -1,6 +1,5 @@
 /*
-   Copyright (c) 2013-2019 by Adam Feuer <adam@adamfeuer.com>
-   Copyright (c) 2012-2016 by Kendrick Shaw, Ace Medlock, and Eric Herman
+   Copyright © 2013-2020 Starcat LLC / Adam Feuer <adam@starcat.io>
 
    This file is free software: you can redistribute it and/or modify
    it under the terms of the GNU Lesser General Public License as published by
