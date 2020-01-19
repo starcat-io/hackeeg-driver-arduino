@@ -24,7 +24,7 @@
 #include "SpiDma.h"
 
 // for multiple boards
-uint8_t current_board = 0;
+uint8_t current_board = INITIAL_BOARD;
 uint8_t cs_pins[MAX_BOARDS] = {23, 52, 10, 4};
 uint8_t drdy_pins[MAX_BOARDS] = {24, 25, 26, 27};
 

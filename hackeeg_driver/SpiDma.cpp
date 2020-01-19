@@ -39,8 +39,8 @@ void spiInit(uint8_t bitOrder, uint8_t spiMode, uint8_t spiClockDivider) {
     SPI.setClockDivider(spiClockDivider);
     for (int i=0; i< MAX_BOARDS; i++) {
         pinMode(cs_pins[i], OUTPUT);
+        digitalWrite(cs_pins[i], HIGH); // turn CS off
     }
-
 }
 
 /** SPI receive a byte */

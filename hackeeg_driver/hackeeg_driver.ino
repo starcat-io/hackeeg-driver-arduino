@@ -132,8 +132,10 @@ void hexModeOnCommand(unsigned char unused1, unsigned char unused2);
 void helpCommand(unsigned char unused1, unsigned char unused2);
 void readRegisterCommand(unsigned char unused1, unsigned char unused2);
 void writeRegisterCommand(unsigned char unused1, unsigned char unused2);
-void readRegisterCommandDirect(unsigned char register_number);
+void readRegisterCommandDirect(unsigned char register_number, unsigned char unused1);
 void writeRegisterCommandDirect(unsigned char register_number, unsigned char register_value);
+void getCurrentBoard(unsigned char unused1, unsigned char unused2);
+void setCurrentBoard(unsigned char new_board, unsigned char unused1);
 
 
 void setup() {
@@ -193,6 +195,8 @@ void setup() {
     jsonCommand.addCommand("rreg", readRegisterCommandDirect);       // Read ADS129x register
     jsonCommand.addCommand("wreg", writeRegisterCommandDirect);      // Write ADS129x register
     jsonCommand.addCommand("rdata", rdataCommand);                   // Read one sample of data from each active channel
+    jsonCommand.addCommand("get_current_board", getCurrentBoard);    // Gets the current board number that commands will go to (multiboard configurations)
+    jsonCommand.addCommand("set_current_board", setCurrentBoard);    // Sets the current board number that commands will go to (for multiboard configurations)
     jsonCommand.setDefaultHandler(unrecognizedJsonLines);            // Handler for any command that isn't matched
 
     WiredSerial.println("Ready");
@@ -497,6 +501,25 @@ void writeRegisterCommandDirect(unsigned char register_number, unsigned char reg
     }
 }
 
+void getCurrentBoard(unsigned char unused1, unsigned char unused2) {
+    using namespace ADS129x;
+    StaticJsonDocument<1024> doc;
+    JsonObject root = doc.to<JsonObject>();
+    root[STATUS_CODE_KEY] = STATUS_OK;
+    root[STATUS_TEXT_KEY] = STATUS_TEXT_OK;
+    root[DATA_KEY] = (int) current_board;
+    jsonCommand.sendJsonLinesDocResponse(doc);
+}
+
+void setCurrentBoard(unsigned char new_board, unsigned char unused1) {
+    if ((new_board >= 0) && (new_board < MAX_BOARDS)) {
+        current_board = (uint8_t) new_board;
+        send_response_ok();
+    } else {
+        send_response_error();
+    }
+}
+
 void wakeupCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
     adcSendCommand(WAKEUP);
@@ -531,7 +554,7 @@ void stopCommand(unsigned char unused1, unsigned char unused2) {
 
 void rdataCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
-    while (digitalRead(IPIN_DRDY) == HIGH);
+    while (digitalRead(drdy_pins[current_board]) == HIGH);
     adcSendCommandLeaveCsActive(RDATA);
     if (protocol_mode == TEXT_MODE) {
         send_response_ok();
@@ -665,11 +688,9 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
     using namespace ADS129x;
     // Send SDATAC Command (Stop Read Data Continuously mode)
     boards[current_board].spi_data_available = 0;
-    attachInterrupt(digitalPinToInterrupt(IPIN_DRDY), drdy_interrupt, FALLING);
+    attachInterrupt(digitalPinToInterrupt(drdy_pins[current_board]), drdy_interrupt, FALLING);
     adcSendCommand(SDATAC);
     delay(1000); //pause to provide ads129n enough time to boot up...
-    // delayMicroseconds(2);
-    delay(100);
     int val = adcRreg(ID);
     switch (val & B00011111) {
         case B10000:
@@ -701,14 +722,14 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
     }
     num_spi_bytes = (3 * (boards[current_board].max_channels + 1)); //24-bits header plus 24-bits per channel
     num_timestamped_spi_bytes = num_spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES;
-    if (boards[current_board].max_channels == 0) { //error mode
+    if (boards[current_board].max_channels == 0) { // error mode
         while (1) {
             digitalWrite(PIN_LED, HIGH);
             delay(500);
             digitalWrite(PIN_LED, LOW);
             delay(500);
         }
-    } //error mode
+    } // error mode
 
     // All GPIO set to output 0x0000: (floating CMOS inputs can flicker on and off, creating noise)
     adcWreg(GPIO, 0);
@@ -716,19 +737,30 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
     digitalWrite(PIN_START, HIGH);
 }
 
+void rapidBlink() {
+    // signal we got here
+    while (1) {
+        digitalWrite(PIN_LED, HIGH);
+        delay(100);
+        digitalWrite(PIN_LED, LOW);
+        delay(100);
+    }
+}
+
 void arduinoSetup() {
     pinMode(PIN_LED, OUTPUT);
     using namespace ADS129x;
+
 
     pinMode(PIN_START, OUTPUT);
     for (int i=0; i< MAX_BOARDS; i++) {
         pinMode(drdy_pins[i], INPUT);
     }
 
-    pinMode(PIN_CLKSEL, OUTPUT);// *optional
-    pinMode(IPIN_RESET, OUTPUT);// *optional
-    //pinMode(IPIN_PWDN, OUTPUT);// *optional
-    digitalWrite(PIN_CLKSEL, HIGH); // internal clock
+    pinMode(PIN_CLKSEL, OUTPUT); // *optional
+    pinMode(IPIN_RESET, OUTPUT); // *optional
+    pinMode(IPIN_PWDN, OUTPUT);  // *optional
+
     spiBegin(cs_pins[current_board]);
     spiInit(MSBFIRST, SPI_MODE1, SPI_CLOCK_DIVIDER);
 
@@ -743,4 +775,5 @@ void arduinoSetup() {
     delay(1);
     digitalWrite(IPIN_RESET, HIGH);
     delay(1);  // *optional Wait for 18 tCLKs AKA 9 microseconds, we use 1 millisecond
-} 
+
+}

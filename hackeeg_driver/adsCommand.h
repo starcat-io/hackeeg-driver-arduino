@@ -23,8 +23,6 @@
 
 #include "Arduino.h"
 
-// constants define pins on Arduino 
-
 // Arduino Due
 // HackEEG Shield v1.5.0
 const int IPIN_PWDN = 33;
@@ -32,19 +30,18 @@ const int PIN_CLKSEL = 48;
 const int IPIN_RESET = 47;
 
 const int PIN_START = 59;
-const int IPIN_DRDY = 24;
-const int PIN_CS = 23;
 
 // for multiple boards
 #define MAX_BOARDS 4
+#define INITIAL_BOARD 0
 
 extern uint8_t current_board;
 extern uint8_t cs_pins[MAX_BOARDS];
 extern uint8_t drdy_pins[MAX_BOARDS];
 
-//const int PIN_DOUT = 11;  //SPI out
-//const int PIN_DIN = 12;   //SPI in
-//const int PIN_SCLK = 13;  //SPI clock
+const int PIN_DOUT = 11;  // SPI out
+const int PIN_DIN = 12;   // SPI in
+const int PIN_SCLK = 13;  // SPI clock
 
 void csLow();
 void csHigh();
