@@ -148,10 +148,17 @@ void setup() {
     protocol_mode = TEXT_MODE;
     arduinoSetup();
 
-    int result = setupBoard();  // if you have only one board, it must be configured as board 0
-    if (result < 0) {
-        rapidBlink();
+    delay(200);
+    for (int i=0; i<MAX_BOARDS; i++) {
+        if (senseBoard(i) > 0) {
+            current_board = i;
+            int result = setupBoard();
+            if (result < 0) {
+                rapidBlinkForever(); // error
+            }
+        }
     }
+    current_board = 0;
 
     // Setup callbacks for SerialCommand commands
     serialCommand.addCommand("nop", nopCommand);                     // No operation (does nothing)
@@ -186,8 +193,8 @@ void setup() {
     jsonCommand.addCommand("micros", microsCommand);                      // Returns number of microseconds since the program began executing
     jsonCommand.addCommand("ledon", ledOnCommand);                        // Turns Arduino Due onboard LED on
     jsonCommand.addCommand("ledoff", ledOffCommand);                      // Turns Arduino Due onboard LED off
-    jsonCommand.addCommand("boardledoff", boardLedOffCommand);            // Turns HackEEG ADS1299 GPIO4 LED off
     jsonCommand.addCommand("boardledon", boardLedOnCommand);              // Turns HackEEG ADS1299 GPIO4 LED on
+    jsonCommand.addCommand("boardledoff", boardLedOffCommand);            // Turns HackEEG ADS1299 GPIO4 LED off
     jsonCommand.addCommand("status", statusCommand);                      // Returns the driver status
     jsonCommand.addCommand("reset", resetCommand);                        // Reset the ADS1299
     jsonCommand.addCommand("start", startCommand);                        // Send START command
@@ -395,18 +402,32 @@ void ledOffCommand(unsigned char unused1, unsigned char unused2) {
     send_response_ok();
 }
 
-void boardLedOnCommand(unsigned char unused1, unsigned char unused2) {
+void boardLedOn() {
     int state = adcRreg(ADS129x::GPIO);
     state = state & 0xF7;
     state = state | 0x80;
     adcWreg(ADS129x::GPIO, state);
+}
+
+void boardLedOff() {
+    int state = adcRreg(ADS129x::GPIO);
+    state = state & 0x77;
+    adcWreg(ADS129x::GPIO, state);
+}
+
+void blinkBoardLed() {
+    boardLedOn();
+    delay(200);
+    boardLedOff();
+}
+
+void boardLedOnCommand(unsigned char unused1, unsigned char unused2) {
+    boardLedOn();
     send_response_ok();
 }
 
 void boardLedOffCommand(unsigned char unused1, unsigned char unused2) {
-    int state = adcRreg(ADS129x::GPIO);
-    state = state & 0x77;
-    adcWreg(ADS129x::GPIO, state);
+    boardLedOff();
     send_response_ok();
 }
 
@@ -537,6 +558,23 @@ void setupBoardCommand(unsigned char unused1, unsigned char unused2) {
     }
 }
 
+// returns the contents of the ADS1299 ID register... nonzero means there is a board there.
+int senseBoard(unsigned char board_number) {
+    using namespace ADS129x;
+    if ((board_number >= 0) && (board_number < MAX_BOARDS)) {
+        uint8_t old_board = current_board;
+        current_board = (uint8_t) board_number;
+        adcSendCommand(SDATAC);
+//        delay(1000); //pause to provide ADS1299 enough time to boot up...
+        delay(200); //pause to provide ADS1299 enough time to boot up...
+        unsigned char result = adcRreg(ID);
+        current_board = old_board;
+        return result;
+    } else {
+        return -1;
+    }
+}
+
 void senseBoardCommand(unsigned char board_number, unsigned char unused) {
     int result = senseBoard(board_number);
     if (result >= 0) {
@@ -548,22 +586,6 @@ void senseBoardCommand(unsigned char board_number, unsigned char unused) {
         jsonCommand.sendJsonLinesDocResponse(doc);
     } else {
         send_response_error();
-    }
-}
-
-// returns the contents of the ADS1299 ID register... nonzero means there is a board there.
-int senseBoard(unsigned char board_number) {
-    using namespace ADS129x;
-    if ((board_number >= 0) && (board_number < MAX_BOARDS)) {
-        uint8_t old_board = current_board;
-        current_board = (uint8_t) board_number;
-//        adcSendCommand(SDATAC);
-//        delay(1000); //pause to provide ADS1299 enough time to boot up...
-        unsigned char result = adcRreg(ID);
-        current_board = old_board;
-        return result;
-    } else {
-        return -1;
     }
 }
 
@@ -776,7 +798,6 @@ int setupBoard() {
             break;
         default:
             boards[current_board].max_channels = 0;
-            rapidBlink();
             return -1; // error
     }
 
@@ -787,10 +808,11 @@ int setupBoard() {
     adcWreg(GPIO, 0);
     adcWreg(CONFIG3,PD_REFBUF | CONFIG3_const);
     digitalWrite(PIN_START, HIGH);
+    blinkBoardLed();
     return 0;
 }
 
-void rapidBlink() {
+void rapidBlinkForever() {
     // signal we got here
     while (1) {
         digitalWrite(PIN_LED, HIGH);
