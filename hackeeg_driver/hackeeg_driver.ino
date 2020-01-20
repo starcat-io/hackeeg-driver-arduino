@@ -726,6 +726,8 @@ f drdyInterruptHandlers[4] = {&drdyInterruptBoard0,
                             &drdyInterruptBoard2,
                             &drdyInterruptBoard3};
 
+
+// TODO: unroll loop
 inline void sendSamples(void) {
     if (!is_rdatac) return;
     for (uint8_t board = 0; board < MAX_BOARDS; board++) {
@@ -776,7 +778,7 @@ inline void sendSample(uint8_t board) {
     }
 }
 
-void send_sample_json_fast(uint8_t board, int num_timestamped_spi_bytes) {
+inline void send_sample_json_fast(uint8_t board, int num_timestamped_spi_bytes) {
     base64_encode(output_buffer, (char *) boards[board].spi_bytes, num_timestamped_spi_bytes);
     WiredSerial.write(json_rdatac_header);
     WiredSerial.write(hex_digits[board]);
@@ -798,6 +800,7 @@ inline void send_sample_json(int num_bytes) {
     jsonCommand.sendJsonLinesDocResponse(doc);
 }
 
+// TODO: test
 // {"C": 200, "B": 0, "D": "T9C06QIAAADAAAARBhIYMGUu4p8mxHjZV9y6u0Cuxza0ISc="}
 inline void send_sample_messagepack(int num_bytes) {
     WiredSerial.write(messagepack_rdatac_header, messagepack_rdatac_header_size);
