@@ -77,6 +77,7 @@ union {
 } sample_number_union;
 
 struct HackEegBoard {
+    uint8_t active;
     uint8_t spi_bytes[SPI_BUFFER_SIZE]; // SPI input buffer
     uint8_t spi_data_available;         // is DRDY active?
     int max_channels;
@@ -85,6 +86,8 @@ struct HackEegBoard {
 };
 
 HackEegBoard boards[MAX_BOARDS];
+int active_boards = 0;
+int total_channels = 0;
 
 // char buffer to send via USB
 char output_buffer[OUTPUT_BUFFER_SIZE];
@@ -153,6 +156,9 @@ void setup() {
         if (senseBoard(i) > 0) {
             current_board = i;
             int result = setupBoard();
+            boards[i].active = 1;
+            total_channels += boards[i].max_channels;
+            active_boards++;
             if (result < 0) {
                 rapidBlinkForever(); // error
             }
@@ -307,6 +313,12 @@ void versionCommand(unsigned char unused1, unsigned char unused2) {
 
 void statusCommand(unsigned char unused1, unsigned char unused2) {
     detectActiveChannels();
+    int active_channels = 0;
+    for (int i=0; i<MAX_BOARDS; i++) {
+        if (boards[i].active > 0) {
+            active_channels += boards[i].num_active_channels;
+        }
+    }
     if (protocol_mode == TEXT_MODE) {
         WiredSerial.println("200 Ok");
         WiredSerial.print("Driver version: ");
@@ -317,10 +329,12 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
         WiredSerial.println(maker_name);
         WiredSerial.print("Hardware type: ");
         WiredSerial.println(hardware_type);
-        WiredSerial.print("Max channels: ");
-        WiredSerial.println(boards[current_board].max_channels);
+        WiredSerial.print("Active boards: ");
+        WiredSerial.println(active_boards);
+        WiredSerial.print("Total channels: ");
+        WiredSerial.println(total_channels);
         WiredSerial.print("Number of active channels: ");
-        WiredSerial.println(boards[current_board].num_active_channels);
+        WiredSerial.println(active_channels);
         WiredSerial.println();
         return;
     }
@@ -333,8 +347,8 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
     status_info["board_name"] = board_name;
     status_info["maker_name"] = maker_name;
     status_info["hardware_type"] = hardware_type;
-    status_info["boards[current_board].max_channels"] = boards[current_board].max_channels;
-    status_info["active_channels"] = boards[current_board].num_active_channels;
+    status_info["total_channels"] = total_channels;
+    status_info["active_channels"] = active_channels;
     switch (protocol_mode) {
         case JSONLINES_MODE:
         case MESSAGEPACK_MODE:
