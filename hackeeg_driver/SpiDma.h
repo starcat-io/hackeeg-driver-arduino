@@ -27,7 +27,7 @@
 
 #define SPI_CLOCK_DIVIDER 5
 
-void spiBegin(uint8_t csPin);
+void spiBegin();
 
 void spiInit(uint8_t bitOrder, uint8_t spiMode, uint8_t spiClockDivider);
 

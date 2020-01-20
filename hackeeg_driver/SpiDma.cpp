@@ -21,26 +21,26 @@
 #include "Arduino.h"
 #include "adsCommand.h"
 
-#define USE_ARDUINO_SPI_LIBRARY 1
-#define USE_NATIVE_SAM3X_SPI 0
+#define USE_ARDUINO_SPI_LIBRARY 0
+#define USE_NATIVE_SAM3X_SPI 1
 
 
 #if USE_ARDUINO_SPI_LIBRARY
 
 #include <SPI.h>
 
-void spiBegin(uint8_t csPin) {
+void spiBegin() {
     SPI.begin();
+    for (int i=0; i< MAX_BOARDS; i++) {
+        pinMode(cs_pins[i], OUTPUT);
+        digitalWrite(cs_pins[i], HIGH); // turn CS off
+    }
 }
 
 void spiInit(uint8_t bitOrder, uint8_t spiMode, uint8_t spiClockDivider) {
     SPI.setBitOrder((BitOrder) bitOrder);  // MSBFIRST or LSBFIRST
     SPI.setDataMode(spiMode);             // SPI_MODE0, SPI_MODE1; SPI_MODE2; SPI_MODE3
     SPI.setClockDivider(spiClockDivider);
-    for (int i=0; i< MAX_BOARDS; i++) {
-        pinMode(cs_pins[i], OUTPUT);
-        digitalWrite(cs_pins[i], HIGH); // turn CS off
-    }
 }
 
 /** SPI receive a byte */
@@ -116,9 +116,11 @@ static bool dmac_channel_transfer_done(uint32_t ul_num) {
   return (DMAC->DMAC_CHSR & (DMAC_CHSR_ENA0 << ul_num)) ? false : true;
 }
 
-void spiBegin(uint8_t csPin) {
-  pinMode(csPin,OUTPUT);
-  digitalWrite(csPin,HIGH);
+void spiBegin() {
+    for (int i=0; i< MAX_BOARDS; i++) {
+        pinMode(cs_pins[i], OUTPUT);
+        digitalWrite(cs_pins[i], HIGH); // turn CS off
+    }
   PIO_Configure(
       g_APinDescription[PIN_SPI_MOSI].pPort,
       g_APinDescription[PIN_SPI_MOSI].ulPinType,

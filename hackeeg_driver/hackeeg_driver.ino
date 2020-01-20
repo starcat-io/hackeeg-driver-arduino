@@ -58,6 +58,7 @@ int num_spi_bytes = 0;
 int num_timestamped_spi_bytes = 0;
 boolean is_rdatac = false;
 boolean base64_mode = true;
+int num_boards = 0; // number of HackEEG boards in stack
 
 char hexDigits[] = "0123456789ABCDEF";
 
@@ -103,7 +104,7 @@ SerialCommand serialCommand;
 JsonCommand jsonCommand;
 
 void arduinoSetup();
-void adsSetup();
+int setupBoard();
 void detectActiveChannels();
 void unrecognized(const char *);
 void unrecognizedJsonLines(const char *);
@@ -134,8 +135,9 @@ void readRegisterCommand(unsigned char unused1, unsigned char unused2);
 void writeRegisterCommand(unsigned char unused1, unsigned char unused2);
 void readRegisterCommandDirect(unsigned char register_number, unsigned char unused1);
 void writeRegisterCommandDirect(unsigned char register_number, unsigned char register_value);
-void getCurrentBoard(unsigned char unused1, unsigned char unused2);
-void setCurrentBoard(unsigned char new_board, unsigned char unused1);
+void getCurrentBoardCommand(unsigned char unused1, unsigned char unused2);
+void setCurrentBoardCommand(unsigned char new_board, unsigned char unused1);
+void senseBoardCommand(unsigned char board_number, unsigned char unused);
 
 
 void setup() {
@@ -145,7 +147,11 @@ void setup() {
 
     protocol_mode = TEXT_MODE;
     arduinoSetup();
-    adsSetup();
+
+    int result = setupBoard();  // if you have only one board, it must be configured as board 0
+    if (result < 0) {
+        rapidBlink();
+    }
 
     // Setup callbacks for SerialCommand commands
     serialCommand.addCommand("nop", nopCommand);                     // No operation (does nothing)
@@ -176,28 +182,30 @@ void setup() {
     serialCommand.setDefaultHandler(unrecognized);                   // Handler for any command that isn't matched
 
     // Setup callbacks for JsonCommand commands
-    jsonCommand.addCommand("nop", nopCommand);                       // No operation (does nothing)
-    jsonCommand.addCommand("micros", microsCommand);                 // Returns number of microseconds since the program began executing
-    jsonCommand.addCommand("ledon", ledOnCommand);                   // Turns Arduino Due onboard LED on
-    jsonCommand.addCommand("ledoff", ledOffCommand);                 // Turns Arduino Due onboard LED off
-    jsonCommand.addCommand("boardledoff", boardLedOffCommand);       // Turns HackEEG ADS1299 GPIO4 LED off
-    jsonCommand.addCommand("boardledon", boardLedOnCommand);         // Turns HackEEG ADS1299 GPIO4 LED on
-    jsonCommand.addCommand("status", statusCommand);                 // Returns the driver status
-    jsonCommand.addCommand("reset", resetCommand);                   // Reset the ADS1299
-    jsonCommand.addCommand("start", startCommand);                   // Send START command
-    jsonCommand.addCommand("stop", stopCommand);                     // Send STOP command
-    jsonCommand.addCommand("rdatac", rdatacCommand);                 // Enter read data continuous mode, clear the ringbuffer, and read new data into the ringbuffer
-    jsonCommand.addCommand("sdatac", sdatacCommand);                 // Stop read data continuous mode; ringbuffer data is still available
-    jsonCommand.addCommand("serialnumber", serialNumberCommand);     // Returns the board serial number (UUID from the onboard 24AA256UID-I/SN I2S EEPROM)
-    jsonCommand.addCommand("text", textCommand);                     // Sets the communication protocol to text
-    jsonCommand.addCommand("jsonlines", jsonlinesCommand);           // Sets the communication protocol to JSONLines
-    jsonCommand.addCommand("messagepack", messagepackCommand);       // Sets the communication protocol to MessagePack
-    jsonCommand.addCommand("rreg", readRegisterCommandDirect);       // Read ADS129x register
-    jsonCommand.addCommand("wreg", writeRegisterCommandDirect);      // Write ADS129x register
-    jsonCommand.addCommand("rdata", rdataCommand);                   // Read one sample of data from each active channel
-    jsonCommand.addCommand("get_current_board", getCurrentBoard);    // Gets the current board number that commands will go to (multiboard configurations)
-    jsonCommand.addCommand("set_current_board", setCurrentBoard);    // Sets the current board number that commands will go to (for multiboard configurations)
-    jsonCommand.setDefaultHandler(unrecognizedJsonLines);            // Handler for any command that isn't matched
+    jsonCommand.addCommand("nop", nopCommand);                            // No operation (does nothing)
+    jsonCommand.addCommand("micros", microsCommand);                      // Returns number of microseconds since the program began executing
+    jsonCommand.addCommand("ledon", ledOnCommand);                        // Turns Arduino Due onboard LED on
+    jsonCommand.addCommand("ledoff", ledOffCommand);                      // Turns Arduino Due onboard LED off
+    jsonCommand.addCommand("boardledoff", boardLedOffCommand);            // Turns HackEEG ADS1299 GPIO4 LED off
+    jsonCommand.addCommand("boardledon", boardLedOnCommand);              // Turns HackEEG ADS1299 GPIO4 LED on
+    jsonCommand.addCommand("status", statusCommand);                      // Returns the driver status
+    jsonCommand.addCommand("reset", resetCommand);                        // Reset the ADS1299
+    jsonCommand.addCommand("start", startCommand);                        // Send START command
+    jsonCommand.addCommand("stop", stopCommand);                          // Send STOP command
+    jsonCommand.addCommand("rdatac", rdatacCommand);                      // Enter read data continuous mode, clear the ringbuffer, and read new data into the ringbuffer
+    jsonCommand.addCommand("sdatac", sdatacCommand);                      // Stop read data continuous mode; ringbuffer data is still available
+    jsonCommand.addCommand("serialnumber", serialNumberCommand);          // Returns the board serial number (UUID from the onboard 24AA256UID-I/SN I2S EEPROM)
+    jsonCommand.addCommand("text", textCommand);                          // Sets the communication protocol to text
+    jsonCommand.addCommand("jsonlines", jsonlinesCommand);                // Sets the communication protocol to JSONLines
+    jsonCommand.addCommand("messagepack", messagepackCommand);            // Sets the communication protocol to MessagePack
+    jsonCommand.addCommand("rreg", readRegisterCommandDirect);            // Read ADS129x register
+    jsonCommand.addCommand("wreg", writeRegisterCommandDirect);           // Write ADS129x register
+    jsonCommand.addCommand("rdata", rdataCommand);                        // Read one sample of data from each active channel
+    jsonCommand.addCommand("setup_board", setupBoardCommand);             // Sets up the current board and puts the ADS1299 into a known state
+    jsonCommand.addCommand("get_current_board", getCurrentBoardCommand);  // Gets the current board number that commands will go to (multiboard configurations)
+    jsonCommand.addCommand("set_current_board", setCurrentBoardCommand);  // Sets the current board number that commands will go to (for multiboard configurations)
+    jsonCommand.addCommand("sense_board", senseBoardCommand);             // Reads the ID register (0) for the ADS1299 for the board (doesn't change current board)
+    jsonCommand.setDefaultHandler(unrecognizedJsonLines);                 // Handler for any command that isn't matched
 
     WiredSerial.println("Ready");
 }
@@ -501,7 +509,7 @@ void writeRegisterCommandDirect(unsigned char register_number, unsigned char reg
     }
 }
 
-void getCurrentBoard(unsigned char unused1, unsigned char unused2) {
+void getCurrentBoardCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
     StaticJsonDocument<1024> doc;
     JsonObject root = doc.to<JsonObject>();
@@ -511,12 +519,51 @@ void getCurrentBoard(unsigned char unused1, unsigned char unused2) {
     jsonCommand.sendJsonLinesDocResponse(doc);
 }
 
-void setCurrentBoard(unsigned char new_board, unsigned char unused1) {
+void setCurrentBoardCommand(unsigned char new_board, unsigned char unused1) {
     if ((new_board >= 0) && (new_board < MAX_BOARDS)) {
-        current_board = (uint8_t) new_board;
+        setCurrentBoard((uint8_t) new_board);
         send_response_ok();
     } else {
         send_response_error();
+    }
+}
+
+void setupBoardCommand(unsigned char unused1, unsigned char unused2) {
+    int result = setupBoard();
+    if (result >= 0) {
+        send_response_ok();
+    } else {
+        send_response_error();
+    }
+}
+
+void senseBoardCommand(unsigned char board_number, unsigned char unused) {
+    int result = senseBoard(board_number);
+    if (result >= 0) {
+        StaticJsonDocument<1024> doc;
+        JsonObject root = doc.to<JsonObject>();
+        root[STATUS_CODE_KEY] = STATUS_OK;
+        root[STATUS_TEXT_KEY] = STATUS_TEXT_OK;
+        root[DATA_KEY] = result;
+        jsonCommand.sendJsonLinesDocResponse(doc);
+    } else {
+        send_response_error();
+    }
+}
+
+// returns the contents of the ADS1299 ID register... nonzero means there is a board there.
+int senseBoard(unsigned char board_number) {
+    using namespace ADS129x;
+    if ((board_number >= 0) && (board_number < MAX_BOARDS)) {
+        uint8_t old_board = current_board;
+        current_board = (uint8_t) board_number;
+//        adcSendCommand(SDATAC);
+//        delay(1000); //pause to provide ADS1299 enough time to boot up...
+        unsigned char result = adcRreg(ID);
+        current_board = old_board;
+        return result;
+    } else {
+        return -1;
     }
 }
 
@@ -535,8 +582,12 @@ void standbyCommand(unsigned char unused1, unsigned char unused2) {
 void resetCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
     adcSendCommand(RESET);
-    adsSetup();
-    send_response_ok();
+    int result = setupBoard();
+    if (result >= 0) {
+        send_response_ok();
+    } else {
+        send_response_error();
+    }
 }
 
 void startCommand(unsigned char unused1, unsigned char unused2) {
@@ -684,13 +735,19 @@ inline void send_sample_messagepack(int num_bytes) {
     WiredSerial.write(boards[current_board].spi_bytes, num_bytes);
 }
 
-void adsSetup() { //default settings for ADS1298 and compatible chips
+void setCurrentBoard(uint8_t new_board) {
+//    detachInterrupt(digitalPinToInterrupt(drdy_pins[current_board]));
+    current_board = (uint8_t) new_board;
+    attachInterrupt(digitalPinToInterrupt(drdy_pins[current_board]), drdy_interrupt, FALLING);
+}
+
+// initialize ADS1299
+int setupBoard() {
     using namespace ADS129x;
     // Send SDATAC Command (Stop Read Data Continuously mode)
-    boards[current_board].spi_data_available = 0;
-    attachInterrupt(digitalPinToInterrupt(drdy_pins[current_board]), drdy_interrupt, FALLING);
     adcSendCommand(SDATAC);
-    delay(1000); //pause to provide ads129n enough time to boot up...
+    delay(1000); // pause to provide the ADS1299 enough time to boot up...
+    boards[current_board].spi_data_available = 0;
     int val = adcRreg(ID);
     switch (val & B00011111) {
         case B10000:
@@ -719,22 +776,18 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
             break;
         default:
             boards[current_board].max_channels = 0;
+            rapidBlink();
+            return -1; // error
     }
-    num_spi_bytes = (3 * (boards[current_board].max_channels + 1)); //24-bits header plus 24-bits per channel
+
+    num_spi_bytes = (3 * (boards[current_board].max_channels + 1)); // 24-bits header plus 24-bits per channel
     num_timestamped_spi_bytes = num_spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES;
-    if (boards[current_board].max_channels == 0) { // error mode
-        while (1) {
-            digitalWrite(PIN_LED, HIGH);
-            delay(500);
-            digitalWrite(PIN_LED, LOW);
-            delay(500);
-        }
-    } // error mode
 
     // All GPIO set to output 0x0000: (floating CMOS inputs can flicker on and off, creating noise)
     adcWreg(GPIO, 0);
     adcWreg(CONFIG3,PD_REFBUF | CONFIG3_const);
     digitalWrite(PIN_START, HIGH);
+    return 0;
 }
 
 void rapidBlink() {
@@ -761,7 +814,7 @@ void arduinoSetup() {
     pinMode(IPIN_RESET, OUTPUT); // *optional
     pinMode(IPIN_PWDN, OUTPUT);  // *optional
 
-    spiBegin(cs_pins[current_board]);
+    spiBegin();
     spiInit(MSBFIRST, SPI_MODE1, SPI_CLOCK_DIVIDER);
 
     // Start ADS1299
