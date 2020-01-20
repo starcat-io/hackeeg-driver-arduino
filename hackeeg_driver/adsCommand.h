@@ -44,10 +44,14 @@ const int PIN_DIN = 12;   // SPI in
 const int PIN_SCLK = 13;  // SPI clock
 
 void csLow();
+void csLow(uint8_t board);
 void csHigh();
+void csHigh(uint8_t board);
 void adcWreg(int reg, int val);
+void adcWreg(uint8_t board, int reg, int val);
 void adcSendCommand(int cmd);
 void adcSendCommandLeaveCsActive(int cmd);
 int adcRreg(int reg);
+int adcRreg(uint8_t board, int reg);
 
 #endif // _ADS_COMMAND_H

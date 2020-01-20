@@ -29,11 +29,19 @@ uint8_t cs_pins[MAX_BOARDS] = {23, 52, 10, 4};
 uint8_t drdy_pins[MAX_BOARDS] = {24, 25, 26, 27};
 
 void csLow() {
-    digitalWrite(cs_pins[current_board], LOW);
+    csLow(current_board);
+}
+
+void csLow(uint8_t board) {
+    digitalWrite(cs_pins[board], LOW);
 }
 
 void csHigh() {
-    digitalWrite(cs_pins[current_board], HIGH);
+    csHigh(current_board);
+}
+
+void csHigh(uint8_t board) {
+    digitalWrite(cs_pins[board], HIGH);
 }
 
 void adcSendCommand(int cmd) {
@@ -49,26 +57,34 @@ void adcSendCommandLeaveCsActive(int cmd) {
 }
 
 void adcWreg(int reg, int val) {
+    return adcWreg(current_board, reg, val);
+}
+
+void adcWreg(uint8_t board, int reg, int val) {
     // see pages 40,43 of datasheet -
-    csLow();
+    csLow(board);
     spiSend(ADS129x::WREG | reg);
     delayMicroseconds(2);
     spiSend(0);    // number of registers to be read/written – 1
     delayMicroseconds(2);
     spiSend(val);
     delayMicroseconds(1);
-    csHigh();
+    csHigh(board);
 }
 
 int adcRreg(int reg) {
+    return adcRreg(current_board, reg);
+}
+
+int adcRreg(uint8_t board, int reg) {
     uint8_t out = 0;
-    csLow();
+    csLow(board);
     spiSend(ADS129x::RREG | reg);
     delayMicroseconds(2);
     spiSend(0);    // number of registers to be read/written – 1
     delayMicroseconds(2);
     out = spiRec();
     delayMicroseconds(1);
-    csHigh();
+    csHigh(board);
     return ((int) out);
 }

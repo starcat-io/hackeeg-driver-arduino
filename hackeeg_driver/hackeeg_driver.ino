@@ -78,16 +78,16 @@ union {
 
 struct HackEegBoard {
     uint8_t active;
-    uint8_t spi_bytes[SPI_BUFFER_SIZE]; // SPI input buffer
     int max_channels;
     int num_active_channels;
     boolean active_channels[8];         // reports whether channels 1..8 are active
+    uint8_t spi_bytes[SPI_BUFFER_SIZE]; // SPI input buffer
+    uint8_t spi_data_available;         // is DRDY active?
 };
 
 HackEegBoard boards[MAX_BOARDS];
 int active_boards = 0;
 int total_channels = 0;
-uint8_t spi_data_available;         // is DRDY active?
 
 // char buffer to send via USB
 char output_buffer[OUTPUT_BUFFER_SIZE];
@@ -239,7 +239,7 @@ void loop() {
             // do nothing
             ;
     }
-    send_samples();
+    sendSamples();
 }
 
 long hex_to_long(char *digits) {
@@ -649,14 +649,15 @@ void rdataCommand(unsigned char unused1, unsigned char unused2) {
     if (protocol_mode == TEXT_MODE) {
         send_response_ok();
     }
-    send_sample();
+    sendSample(current_board);
 }
 
 void rdatacCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
     detectActiveChannels();
-    if (boards[current_board].num_active_channels > 0) {
+    if (total_channels > 0) {
         is_rdatac = true;
+        synchronizeDrdyOnAllBoards();
         adcSendCommand(RDATAC);
         send_response_ok();
     } else {
@@ -688,61 +689,84 @@ void unrecognizedJsonLines(const char *command) {
 }
 
 void detectActiveChannels() {  //set device into RDATAC (continous) mode -it will stream data
-    if ((is_rdatac) || (boards[current_board].max_channels < 1)) return; //we can not read registers when in RDATAC mode
+    if ((is_rdatac) || (total_channels < 1)) return; //we can not read registers when in RDATAC mode
     //Serial.println("Detect active channels: ");
     using namespace ADS129x;
-    boards[current_board].num_active_channels = 0;
-    for (int i = 1; i <= boards[current_board].max_channels; i++) {
-        delayMicroseconds(1);
-        int chSet = adcRreg(CHnSET + i);
-        boards[current_board].active_channels[i] = ((chSet & 7) != SHORTED);
-        if ((chSet & 7) != SHORTED) boards[current_board].num_active_channels++;
+    for (int board = 0; board < MAX_BOARDS; board++) {
+        boards[board].num_active_channels = 0;
+        for (int i = 1; i <= boards[board].max_channels; i++) {
+            delayMicroseconds(1);
+            int chSet = adcRreg(board, CHnSET + i);
+            boards[board].active_channels[i] = ((chSet & 7) != SHORTED);
+            if ((chSet & 7) != SHORTED) boards[board].num_active_channels++;
+        }
+
     }
 }
 
-void drdy_interrupt() {
-    spi_data_available = 1;
+void drdyInterruptBoard0() {
+    boards[0].spi_data_available = 1;
 }
 
-inline void send_samples(void) {
+void drdyInterruptBoard1() {
+    boards[1].spi_data_available = 1;
+}
+
+void drdyInterruptBoard2() {
+    boards[2].spi_data_available = 1;
+}
+
+void drdyInterruptBoard3() {
+    boards[3].spi_data_available = 1;
+}
+
+typedef void (*f)();
+f drdyInterruptHandlers[4] = {&drdyInterruptBoard0,
+                            &drdyInterruptBoard1,
+                            &drdyInterruptBoard2,
+                            &drdyInterruptBoard3};
+
+inline void sendSamples(void) {
     if (!is_rdatac) return;
-    if (spi_data_available) {
-        spi_data_available = 0;
-        receive_sample();
-        send_sample();
+    for (uint8_t board = 0; board < MAX_BOARDS; board++) {
+        if ((boards[board].spi_data_available) && (boards[board].active > 0)) {
+            boards[board].spi_data_available = 0;
+            receiveSample(board);
+            sendSample(board);
+        }
     }
 }
 
-inline void receive_sample() {
-    csLow();
+inline void receiveSample(uint8_t board) {
+    csLow(board);
     delayMicroseconds(10);
-    memset(boards[current_board].spi_bytes, 0, sizeof(boards[current_board].spi_bytes));
+    memset(boards[board].spi_bytes, 0, sizeof(boards[board].spi_bytes));
     timestamp_union.timestamp = micros();
-    boards[current_board].spi_bytes[0] = timestamp_union.timestamp_bytes[0];
-    boards[current_board].spi_bytes[1] = timestamp_union.timestamp_bytes[1];
-    boards[current_board].spi_bytes[2] = timestamp_union.timestamp_bytes[2];
-    boards[current_board].spi_bytes[3] = timestamp_union.timestamp_bytes[3];
-    boards[current_board].spi_bytes[4] = sample_number_union.sample_number_bytes[0];
-    boards[current_board].spi_bytes[5] = sample_number_union.sample_number_bytes[1];
-    boards[current_board].spi_bytes[6] = sample_number_union.sample_number_bytes[2];
-    boards[current_board].spi_bytes[7] = sample_number_union.sample_number_bytes[3];
+    boards[board].spi_bytes[0] = timestamp_union.timestamp_bytes[0];
+    boards[board].spi_bytes[1] = timestamp_union.timestamp_bytes[1];
+    boards[board].spi_bytes[2] = timestamp_union.timestamp_bytes[2];
+    boards[board].spi_bytes[3] = timestamp_union.timestamp_bytes[3];
+    boards[board].spi_bytes[4] = sample_number_union.sample_number_bytes[0];
+    boards[board].spi_bytes[5] = sample_number_union.sample_number_bytes[1];
+    boards[board].spi_bytes[6] = sample_number_union.sample_number_bytes[2];
+    boards[board].spi_bytes[7] = sample_number_union.sample_number_bytes[3];
 
-    uint8_t returnCode = spiRec(boards[current_board].spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES, num_spi_bytes);
+    uint8_t returnCode = spiRec(boards[board].spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES, num_spi_bytes);
 
-    csHigh();
+    csHigh(board);
     sample_number_union.sample_number++;
 }
 
-inline void send_sample(void) {
+inline void sendSample(uint8_t board) {
     switch (protocol_mode) {
         case JSONLINES_MODE:
-            send_sample_json_fast(num_timestamped_spi_bytes);
+            send_sample_json_fast(board, num_timestamped_spi_bytes);
             break;
         case TEXT_MODE:
             if (base64_mode) {
-                base64_encode(output_buffer, (char *) boards[current_board].spi_bytes, num_timestamped_spi_bytes);
+                base64_encode(output_buffer, (char *) boards[board].spi_bytes, num_timestamped_spi_bytes);
             } else {
-                encode_hex(output_buffer, (char *) boards[current_board].spi_bytes, num_timestamped_spi_bytes);
+                encode_hex(output_buffer, (char *) boards[board].spi_bytes, num_timestamped_spi_bytes);
             }
             WiredSerial.println(output_buffer);
             break;
@@ -752,10 +776,10 @@ inline void send_sample(void) {
     }
 }
 
-void send_sample_json_fast(int num_timestamped_spi_bytes) {
-    base64_encode(output_buffer, (char *) boards[current_board].spi_bytes, num_timestamped_spi_bytes);
+void send_sample_json_fast(uint8_t board, int num_timestamped_spi_bytes) {
+    base64_encode(output_buffer, (char *) boards[board].spi_bytes, num_timestamped_spi_bytes);
     WiredSerial.write(json_rdatac_header);
-    WiredSerial.write(hex_digits[current_board]);
+    WiredSerial.write(hex_digits[board]);
     WiredSerial.write(json_rdatac_middle);
     WiredSerial.write(output_buffer);
     WiredSerial.write(json_rdatac_footer);
@@ -786,7 +810,6 @@ inline void send_sample_messagepack(int num_bytes) {
 void setCurrentBoard(uint8_t new_board) {
 //    detachInterrupt(digitalPinToInterrupt(drdy_pins[current_board]));
     current_board = (uint8_t) new_board;
-    attachInterrupt(digitalPinToInterrupt(drdy_pins[current_board]), drdy_interrupt, FALLING);
 }
 
 // initialize ADS1299
@@ -795,7 +818,10 @@ int setupBoard() {
     // Send SDATAC Command (Stop Read Data Continuously mode)
     adcSendCommand(SDATAC);
     delay(1000); // pause to provide the ADS1299 enough time to boot up...
-    spi_data_available = 0;
+    boards[current_board].spi_data_available = 0;
+    attachInterrupt(digitalPinToInterrupt(drdy_pins[current_board]),
+            drdyInterruptHandlers[current_board],
+            FALLING);
     int val = adcRreg(ID);
     switch (val & B00011111) {
         case B10000:
@@ -833,9 +859,14 @@ int setupBoard() {
     // All GPIO set to output 0x0000: (floating CMOS inputs can flicker on and off, creating noise)
     adcWreg(GPIO, 0);
     adcWreg(CONFIG3,PD_REFBUF | CONFIG3_const);
-    digitalWrite(PIN_START, HIGH);
     blinkBoardLed();
     return 0;
+}
+
+void synchronizeDrdyOnAllBoards() {
+    digitalWrite(PIN_START, HIGH);
+    delay(1);
+    digitalWrite(PIN_START, LOW);
 }
 
 void rapidBlinkForever() {
