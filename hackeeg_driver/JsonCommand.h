@@ -52,6 +52,7 @@ extern const char *STATUS_CODE_KEY;
 extern const char *STATUS_TEXT_KEY;
 extern const char *HEADERS_KEY;
 extern const char *DATA_KEY;
+extern const char *BOARD_KEY;
 
 extern const char *MP_COMMAND_KEY;
 extern const char *MP_PARAMETERS_KEY;

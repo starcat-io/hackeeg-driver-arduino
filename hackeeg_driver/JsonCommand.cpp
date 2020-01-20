@@ -31,6 +31,7 @@ const char *STATUS_CODE_KEY = "STATUS_CODE";
 const char *STATUS_TEXT_KEY = "STATUS_TEXT";
 const char *HEADERS_KEY = "HEADERS";
 const char *DATA_KEY = "DATA";
+const char *BOARD_KEY = "BOARD";
 
 const char *MP_COMMAND_KEY = "C";
 const char *MP_PARAMETERS_KEY = "P";
@@ -38,6 +39,8 @@ const char *MP_STATUS_CODE_KEY = "C";
 const char *MP_STATUS_TEXT_KEY = "T";
 const char *MP_HEADERS_KEY = "H";
 const char *MP_DATA_KEY = "D";
+const char *MP_BOARD_KEY = "B";
+
 /**
  * Constructor makes sure some things are set.
  */

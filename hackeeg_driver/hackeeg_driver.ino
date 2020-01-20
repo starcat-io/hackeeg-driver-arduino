@@ -60,7 +60,7 @@ boolean is_rdatac = false;
 boolean base64_mode = true;
 int num_boards = 0; // number of HackEEG boards in stack
 
-char hexDigits[] = "0123456789ABCDEF";
+char hex_digits[] = "0123456789ABCDEF";
 
 // microseconds timestamp
 #define TIMESTAMP_SIZE_IN_BYTES 4
@@ -79,7 +79,6 @@ union {
 struct HackEegBoard {
     uint8_t active;
     uint8_t spi_bytes[SPI_BUFFER_SIZE]; // SPI input buffer
-    uint8_t spi_data_available;         // is DRDY active?
     int max_channels;
     int num_active_channels;
     boolean active_channels[8];         // reports whether channels 1..8 are active
@@ -88,6 +87,7 @@ struct HackEegBoard {
 HackEegBoard boards[MAX_BOARDS];
 int active_boards = 0;
 int total_channels = 0;
+uint8_t spi_data_available;         // is DRDY active?
 
 // char buffer to send via USB
 char output_buffer[OUTPUT_BUFFER_SIZE];
@@ -97,11 +97,14 @@ const char *board_name = "HackEEG";
 const char *maker_name = "Starcat LLC";
 const char *driver_version = "v0.4.0";
 
-const char *json_rdatac_header= "{\"C\":200,\"D\":\"";
+const char *json_rdatac_header= "{\"C\":200,\"B\":";
+const char *json_rdatac_middle = ",\"D\":\"";
 const char *json_rdatac_footer= "\"}";
 
-uint8_t messagepack_rdatac_header[] = { 0x82, 0xa1, 0x43, 0xcc, 0xc8, 0xa1, 0x44, 0xc4};
+uint8_t messagepack_rdatac_header[] = { 0x82, 0xa1, 0x43, 0xcc, 0xc8, 0xa1, 0x42};
 size_t messagepack_rdatac_header_size = sizeof(messagepack_rdatac_header);
+uint8_t messagepack_rdatac_middle[] = { 0xa1, 0x44, 0xd9, 0x30};
+size_t messagepack_rdatac_middle_size = sizeof(messagepack_rdatac_header);
 
 SerialCommand serialCommand;
 JsonCommand jsonCommand;
@@ -262,8 +265,8 @@ void encode_hex(char *output, char *input, int input_len) {
     for (register int i = 0; i < input_len; i++) {
         register uint8_t low_nybble = input[i] & 0x0f;
         register uint8_t highNybble = input[i] >> 4;
-        output[count++] = hexDigits[highNybble];
-        output[count++] = hexDigits[low_nybble];
+        output[count++] = hex_digits[highNybble];
+        output[count++] = hex_digits[low_nybble];
     }
     output[count] = 0;
 }
@@ -698,13 +701,13 @@ void detectActiveChannels() {  //set device into RDATAC (continous) mode -it wil
 }
 
 void drdy_interrupt() {
-    boards[current_board].spi_data_available = 1;
+    spi_data_available = 1;
 }
 
 inline void send_samples(void) {
     if (!is_rdatac) return;
-    if (boards[current_board].spi_data_available) {
-        boards[current_board].spi_data_available = 0;
+    if (spi_data_available) {
+        spi_data_available = 0;
         receive_sample();
         send_sample();
     }
@@ -733,11 +736,7 @@ inline void receive_sample() {
 inline void send_sample(void) {
     switch (protocol_mode) {
         case JSONLINES_MODE:
-            WiredSerial.write(json_rdatac_header);
-            base64_encode(output_buffer, (char *) boards[current_board].spi_bytes, num_timestamped_spi_bytes);
-            WiredSerial.write(output_buffer);
-            WiredSerial.write(json_rdatac_footer);
-            WiredSerial.write("\n");
+            send_sample_json_fast(num_timestamped_spi_bytes);
             break;
         case TEXT_MODE:
             if (base64_mode) {
@@ -753,20 +752,33 @@ inline void send_sample(void) {
     }
 }
 
+void send_sample_json_fast(int num_timestamped_spi_bytes) {
+    base64_encode(output_buffer, (char *) boards[current_board].spi_bytes, num_timestamped_spi_bytes);
+    WiredSerial.write(json_rdatac_header);
+    WiredSerial.write(hex_digits[current_board]);
+    WiredSerial.write(json_rdatac_middle);
+    WiredSerial.write(output_buffer);
+    WiredSerial.write(json_rdatac_footer);
+    WiredSerial.write("\n");
+}
 
+// {"C": 200, "D": "T9C06QIAAADAAAARBhIYMGUu4p8mxHjZV9y6u0Cuxza0ISc=", "B": 0}
 inline void send_sample_json(int num_bytes) {
     StaticJsonDocument<1024> doc;
     JsonObject root = doc.to<JsonObject>();
     root[STATUS_CODE_KEY] = STATUS_OK;
     root[STATUS_TEXT_KEY] = STATUS_TEXT_OK;
+    root[BOARD_KEY] = current_board;
     JsonArray data = root.createNestedArray(DATA_KEY);
     copyArray(boards[current_board].spi_bytes, num_bytes, data);
     jsonCommand.sendJsonLinesDocResponse(doc);
 }
 
-
+// {"C": 200, "B": 0, "D": "T9C06QIAAADAAAARBhIYMGUu4p8mxHjZV9y6u0Cuxza0ISc="}
 inline void send_sample_messagepack(int num_bytes) {
     WiredSerial.write(messagepack_rdatac_header, messagepack_rdatac_header_size);
+    WiredSerial.write((uint8_t) current_board);
+    WiredSerial.write(messagepack_rdatac_middle, messagepack_rdatac_middle_size);
     WiredSerial.write((uint8_t) num_bytes);
     WiredSerial.write(boards[current_board].spi_bytes, num_bytes);
 }
@@ -783,7 +795,7 @@ int setupBoard() {
     // Send SDATAC Command (Stop Read Data Continuously mode)
     adcSendCommand(SDATAC);
     delay(1000); // pause to provide the ADS1299 enough time to boot up...
-    boards[current_board].spi_data_available = 0;
+    spi_data_available = 0;
     int val = adcRreg(ID);
     switch (val & B00011111) {
         case B10000:
