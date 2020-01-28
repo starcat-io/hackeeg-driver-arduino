@@ -60,6 +60,7 @@ extern const char *MP_STATUS_CODE_KEY;
 extern const char *MP_STATUS_TEXT_KEY;
 extern const char *MP_HEADERS_KEY;
 extern const char *MP_DATA_KEY;
+extern const char *MP_BOARD_KEY;
 
 typedef void (*command_func)(unsigned char, unsigned char);
 

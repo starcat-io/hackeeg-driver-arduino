@@ -101,10 +101,13 @@ const char *json_rdatac_header= "{\"C\":200,\"B\":";
 const char *json_rdatac_middle = ",\"D\":\"";
 const char *json_rdatac_footer= "\"}";
 
-uint8_t messagepack_rdatac_header[] = { 0x82, 0xa1, 0x43, 0xcc, 0xc8, 0xa1, 0x42};
+// {"C": 200, "B": 0, "D": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2]}
+// 83 a1 43 cc c8 a1 42 00 a1 44 c5 00 21 00 01 02 03 04 05 06 07 08 09 00 01 02 03 04 05 06 07 08 09 00 01 02 03 04 05 06 07 08 09 00 01 02
+uint8_t messagepack_rdatac_header[] = { 0x83, 0xa1, 0x43, 0xcc, 0xc8, 0xa1, 0x42};
 size_t messagepack_rdatac_header_size = sizeof(messagepack_rdatac_header);
-uint8_t messagepack_rdatac_middle[] = { 0xa1, 0x44, 0xd9, 0x30};
-size_t messagepack_rdatac_middle_size = sizeof(messagepack_rdatac_header);
+uint8_t messagepack_rdatac_middle[] = { 0xa1, 0x44, 0xc4};
+size_t messagepack_rdatac_middle_size = sizeof(messagepack_rdatac_middle);
+int messagepack_message_size = 0;
 
 SerialCommand serialCommand;
 JsonCommand jsonCommand;
@@ -144,6 +147,7 @@ void writeRegisterCommandDirect(unsigned char register_number, unsigned char reg
 void getCurrentBoardCommand(unsigned char unused1, unsigned char unused2);
 void setCurrentBoardCommand(unsigned char new_board, unsigned char unused1);
 void senseBoardCommand(unsigned char board_number, unsigned char unused);
+void streamDataCommand(unsigned char board_number, unsigned char unused);
 
 
 void setup() {
@@ -187,13 +191,14 @@ void setup() {
     serialCommand.addCommand("reset", resetCommand);                 // Reset the ADS1299
     serialCommand.addCommand("start", startCommand);                 // Send START command
     serialCommand.addCommand("stop", stopCommand);                   // Send STOP command
-    serialCommand.addCommand("rdatac", rdatacCommand);               // Enter read data continuous mode, clear the ringbuffer, and read new data into the ringbuffer
+    serialCommand.addCommand("rdatac", rdatacCommand);               // Put the ADS1299 into read data continuous mode; use streamdata to start streaming samples
     serialCommand.addCommand("sdatac", sdatacCommand);               // Stop read data continuous mode; ringbuffer data is still available
     serialCommand.addCommand("rdata", rdataCommand);                 // Read one sample of data from each active channel
     serialCommand.addCommand("rreg", readRegisterCommand);           // Read ADS129x register, argument in hex, print contents in hex
     serialCommand.addCommand("wreg", writeRegisterCommand);          // Write ADS129x register, arguments in hex
     serialCommand.addCommand("base64", base64ModeOnCommand);         // RDATA commands send base64 encoded data - default
     serialCommand.addCommand("hex", hexModeOnCommand);               // RDATA commands send hex encoded data
+    serialCommand.addCommand("streamdata", hexModeOnCommand);        // Start streaming sample data
     serialCommand.addCommand("help", helpCommand);                   // Print list of commands
     serialCommand.setDefaultHandler(unrecognized);                   // Handler for any command that isn't matched
 
@@ -208,7 +213,7 @@ void setup() {
     jsonCommand.addCommand("reset", resetCommand);                        // Reset the ADS1299
     jsonCommand.addCommand("start", startCommand);                        // Send START command
     jsonCommand.addCommand("stop", stopCommand);                          // Send STOP command
-    jsonCommand.addCommand("rdatac", rdatacCommand);                      // Enter read data continuous mode, clear the ringbuffer, and read new data into the ringbuffer
+    jsonCommand.addCommand("rdatac", rdatacCommand);                      // Put the ADS1299 into read data continuous mode - use stream_data to start streaming samples
     jsonCommand.addCommand("sdatac", sdatacCommand);                      // Stop read data continuous mode; ringbuffer data is still available
     jsonCommand.addCommand("serialnumber", serialNumberCommand);          // Returns the board serial number (UUID from the onboard 24AA256UID-I/SN I2S EEPROM)
     jsonCommand.addCommand("text", textCommand);                          // Sets the communication protocol to text
@@ -221,6 +226,7 @@ void setup() {
     jsonCommand.addCommand("get_current_board", getCurrentBoardCommand);  // Gets the current board number that commands will go to (multiboard configurations)
     jsonCommand.addCommand("set_current_board", setCurrentBoardCommand);  // Sets the current board number that commands will go to (for multiboard configurations)
     jsonCommand.addCommand("sense_board", senseBoardCommand);             // Reads the ID register (0) for the ADS1299 for the board (doesn't change current board)
+    jsonCommand.addCommand("stream_data", streamDataCommand);             // Start streaming EEG data samples
     jsonCommand.setDefaultHandler(unrecognizedJsonLines);                 // Handler for any command that isn't matched
 
     WiredSerial.println("Ready");
@@ -352,6 +358,7 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
     status_info["hardware_type"] = hardware_type;
     status_info["total_channels"] = total_channels;
     status_info["active_channels"] = active_channels;
+    status_info["messagepack_message_size"] = messagepack_message_size;
     switch (protocol_mode) {
         case JSONLINES_MODE:
         case MESSAGEPACK_MODE:
@@ -654,11 +661,16 @@ void rdataCommand(unsigned char unused1, unsigned char unused2) {
 
 void rdatacCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
+    adcSendCommand(RDATAC);
+    send_response_ok();
+}
+
+void streamDataCommand(unsigned char unused1, unsigned char unused2) {
+    using namespace ADS129x;
     detectActiveChannels();
     if (total_channels > 0) {
         is_rdatac = true;
         synchronizeDrdyOnAllBoards();
-        adcSendCommand(RDATAC);
         send_response_ok();
     } else {
         send_response(RESPONSE_NO_ACTIVE_CHANNELS, STATUS_TEXT_NO_ACTIVE_CHANNELS);
@@ -726,16 +738,36 @@ f drdyInterruptHandlers[4] = {&drdyInterruptBoard0,
                             &drdyInterruptBoard2,
                             &drdyInterruptBoard3};
 
+#define BOARD0 0
+#define BOARD1 1
+#define BOARD2 2
+#define BOARD3 3
 
-// TODO: unroll loop
 inline void sendSamples(void) {
     if (!is_rdatac) return;
-    for (uint8_t board = 0; board < MAX_BOARDS; board++) {
-        if ((boards[board].spi_data_available) && (boards[board].active > 0)) {
-            boards[board].spi_data_available = 0;
-            receiveSample(board);
-            sendSample(board);
-        }
+//    if ((boards[BOARD0].spi_data_available) && (boards[BOARD0].active > 0)) {
+    if ((boards[BOARD0].spi_data_available)) {
+        boards[BOARD0].spi_data_available = 0;
+        receiveSample(BOARD0);
+        sendSample(BOARD0);
+    }
+//    if ((boards[BOARD1].spi_data_available) && (boards[BOARD1].active > 0)) {
+    if ((boards[BOARD1].spi_data_available)) {
+        boards[BOARD1].spi_data_available = 0;
+        receiveSample(BOARD1);
+        sendSample(BOARD1);
+    }
+//    if ((boards[BOARD2].spi_data_available) && (boards[BOARD2].active > 0)) {
+    if ((boards[BOARD2].spi_data_available)) {
+        boards[BOARD2].spi_data_available = 0;
+        receiveSample(BOARD2);
+        sendSample(BOARD2);
+    }
+//    if ((boards[BOARD3].spi_data_available) && (boards[BOARD3].active > 0)) {
+    if ((boards[BOARD3].spi_data_available)) {
+        boards[BOARD3].spi_data_available = 0;
+        receiveSample(BOARD3);
+        sendSample(BOARD3);
     }
 }
 
@@ -773,7 +805,7 @@ inline void sendSample(uint8_t board) {
             WiredSerial.println(output_buffer);
             break;
         case MESSAGEPACK_MODE:
-            send_sample_messagepack(num_timestamped_spi_bytes);
+            send_sample_messagepack_fast(board, num_timestamped_spi_bytes);
             break;
     }
 }
@@ -788,26 +820,34 @@ inline void send_sample_json_fast(uint8_t board, int num_timestamped_spi_bytes) 
     WiredSerial.write("\n");
 }
 
-// {"C": 200, "D": "T9C06QIAAADAAAARBhIYMGUu4p8mxHjZV9y6u0Cuxza0ISc=", "B": 0}
-inline void send_sample_json(int num_bytes) {
+// {"C": 200, "B": 0, "D": "T9C06QIAAADAAAARBhIYMGUu4p8mxHjZV9y6u0Cuxza0ISc="}
+inline void send_sample_json(uint8_t board, int num_bytes) {
     StaticJsonDocument<1024> doc;
     JsonObject root = doc.to<JsonObject>();
-    root[STATUS_CODE_KEY] = STATUS_OK;
-    root[STATUS_TEXT_KEY] = STATUS_TEXT_OK;
-    root[BOARD_KEY] = current_board;
-    JsonArray data = root.createNestedArray(DATA_KEY);
-    copyArray(boards[current_board].spi_bytes, num_bytes, data);
+    root[MP_STATUS_CODE_KEY] = STATUS_OK;
+    root[MP_BOARD_KEY] = board;
+    JsonArray data = root.createNestedArray(MP_DATA_KEY);
+    copyArray(boards[board].spi_bytes, num_bytes, data);
     jsonCommand.sendJsonLinesDocResponse(doc);
 }
 
+inline void send_sample_messagepack(uint8_t board, int num_bytes) {
+    StaticJsonDocument<1024> doc;
+    JsonObject root = doc.to<JsonObject>();
+    root[MP_STATUS_CODE_KEY] = STATUS_OK;
+    root[MP_BOARD_KEY] = board;
+    JsonArray data = root.createNestedArray(MP_DATA_KEY);
+    copyArray(boards[board].spi_bytes, num_bytes, data);
+    jsonCommand.sendMessagePackDocResponse(doc);
+}
+
 // TODO: test
-// {"C": 200, "B": 0, "D": "T9C06QIAAADAAAARBhIYMGUu4p8mxHjZV9y6u0Cuxza0ISc="}
-inline void send_sample_messagepack(int num_bytes) {
+inline void send_sample_messagepack_fast(uint8_t board, int num_bytes) {
     WiredSerial.write(messagepack_rdatac_header, messagepack_rdatac_header_size);
-    WiredSerial.write((uint8_t) current_board);
+    WiredSerial.write((uint8_t) board);
     WiredSerial.write(messagepack_rdatac_middle, messagepack_rdatac_middle_size);
     WiredSerial.write((uint8_t) num_bytes);
-    WiredSerial.write(boards[current_board].spi_bytes, num_bytes);
+    WiredSerial.write(boards[board].spi_bytes, num_bytes);
 }
 
 void setCurrentBoard(uint8_t new_board) {
@@ -858,6 +898,7 @@ int setupBoard() {
 
     num_spi_bytes = (3 * (boards[current_board].max_channels + 1)); // 24-bits header plus 24-bits per channel
     num_timestamped_spi_bytes = num_spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES;
+    messagepack_message_size = messagepack_rdatac_header_size + messagepack_rdatac_middle_size + 1 + num_timestamped_spi_bytes;
 
     // All GPIO set to output 0x0000: (floating CMOS inputs can flicker on and off, creating noise)
     adcWreg(GPIO, 0);
