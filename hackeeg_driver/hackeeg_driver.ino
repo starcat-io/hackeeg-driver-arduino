@@ -174,6 +174,7 @@ void setup() {
     // Setup callbacks for JsonCommand commands
     jsonCommand.addCommand("nop", nopCommand);                       // No operation (does nothing)
     jsonCommand.addCommand("micros", microsCommand);                 // Returns number of microseconds since the program began executing
+    jsonCommand.addCommand("version", versionCommand);               // Returns the driver version number
     jsonCommand.addCommand("ledon", ledOnCommand);                   // Turns Arduino Due onboard LED on
     jsonCommand.addCommand("ledoff", ledOffCommand);                 // Turns Arduino Due onboard LED off
     jsonCommand.addCommand("boardledoff", boardLedOffCommand);       // Turns HackEEG ADS1299 GPIO4 LED off
