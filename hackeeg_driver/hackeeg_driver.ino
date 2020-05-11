@@ -18,6 +18,7 @@
    along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
 */
+#include <Arduino.h>
 
 #include <SPI.h>
 #include <stdlib.h>
@@ -107,6 +108,7 @@ void unrecognized(const char *);
 void unrecognizedJsonLines(const char *);
 
 void nopCommand(unsigned char unused1, unsigned char unused2);
+void microsCommand(unsigned char unused1, unsigned char unused2);
 void versionCommand(unsigned char unused1, unsigned char unused2);
 void statusCommand(unsigned char unused1, unsigned char unused2);
 void serialNumberCommand(unsigned char unused1, unsigned char unused2);
@@ -130,9 +132,11 @@ void hexModeOnCommand(unsigned char unused1, unsigned char unused2);
 void helpCommand(unsigned char unused1, unsigned char unused2);
 void readRegisterCommand(unsigned char unused1, unsigned char unused2);
 void writeRegisterCommand(unsigned char unused1, unsigned char unused2);
-void readRegisterCommandDirect(unsigned char register_number);
+void readRegisterCommandDirect(unsigned char register_number, unsigned char unused1);
 void writeRegisterCommandDirect(unsigned char register_number, unsigned char register_value);
 
+inline void send_samples(void);
+inline void send_sample(void);
 
 void setup() {
     WiredSerial.begin(BAUD_RATE);
@@ -242,14 +246,6 @@ void encode_hex(char *output, char *input, int input_len) {
     output[count] = 0;
 }
 
-void send_response_ok() {
-    send_response(RESPONSE_OK, STATUS_TEXT_OK);
-}
-
-void send_response_error() {
-    send_response(RESPONSE_ERROR, STATUS_TEXT_ERROR);
-}
-
 void send_response(int status_code, const char *status_text) {
     switch (protocol_mode) {
         case TEXT_MODE:
@@ -268,6 +264,14 @@ void send_response(int status_code, const char *status_text) {
             // unknown protocol
             ;
     }
+}
+
+void send_response_ok() {
+    send_response(RESPONSE_OK, STATUS_TEXT_OK);
+}
+
+void send_response_error() {
+    send_response(RESPONSE_ERROR, STATUS_TEXT_ERROR);
 }
 
 void send_jsonlines_data(int status_code, char data, char *status_text) {
@@ -590,15 +594,6 @@ void drdy_interrupt() {
     spi_data_available = 1;
 }
 
-inline void send_samples(void) {
-    if (!is_rdatac) return;
-    if (spi_data_available) {
-        spi_data_available = 0;
-        receive_sample();
-        send_sample();
-    }
-}
-
 inline void receive_sample() {
     digitalWrite(PIN_CS, LOW);
     delayMicroseconds(10);
@@ -617,6 +612,24 @@ inline void receive_sample() {
 
     digitalWrite(PIN_CS, HIGH);
     sample_number_union.sample_number++;
+}
+
+
+inline void send_sample_json(int num_bytes) {
+    StaticJsonDocument<1024> doc;
+    JsonObject root = doc.to<JsonObject>();
+    root[STATUS_CODE_KEY] = STATUS_OK;
+    root[STATUS_TEXT_KEY] = STATUS_TEXT_OK;
+    JsonArray data = root.createNestedArray(DATA_KEY);
+    copyArray(spi_bytes, num_bytes, data);
+    jsonCommand.sendJsonLinesDocResponse(doc);
+}
+
+
+inline void send_sample_messagepack(int num_bytes) {
+    WiredSerial.write(messagepack_rdatac_header, messagepack_rdatac_header_size);
+    WiredSerial.write((uint8_t) num_bytes);
+    WiredSerial.write(spi_bytes, num_bytes);
 }
 
 inline void send_sample(void) {
@@ -642,23 +655,15 @@ inline void send_sample(void) {
     }
 }
 
-
-inline void send_sample_json(int num_bytes) {
-    StaticJsonDocument<1024> doc;
-    JsonObject root = doc.to<JsonObject>();
-    root[STATUS_CODE_KEY] = STATUS_OK;
-    root[STATUS_TEXT_KEY] = STATUS_TEXT_OK;
-    JsonArray data = root.createNestedArray(DATA_KEY);
-    copyArray(spi_bytes, num_bytes, data);
-    jsonCommand.sendJsonLinesDocResponse(doc);
+inline void send_samples(void) {
+    if (!is_rdatac) return;
+    if (spi_data_available) {
+        spi_data_available = 0;
+        receive_sample();
+        send_sample();
+    }
 }
 
-
-inline void send_sample_messagepack(int num_bytes) {
-    WiredSerial.write(messagepack_rdatac_header, messagepack_rdatac_header_size);
-    WiredSerial.write((uint8_t) num_bytes);
-    WiredSerial.write(spi_bytes, num_bytes);
-}
 
 void adsSetup() { //default settings for ADS1298 and compatible chips
     using namespace ADS129x;
