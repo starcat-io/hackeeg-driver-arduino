@@ -29,7 +29,7 @@
 #include "JsonCommand.h"
 #include "Base64.h"
 #include "SpiDma.h"
-
+#include "STM32Board.h"
 
 #define BAUD_RATE 2000000     // WiredSerial ignores this and uses the maximum rate
 #define WiredSerial SerialUSB // use the Arduino Due's Native USB port
@@ -145,7 +145,7 @@ void setup() {
 
     protocol_mode = TEXT_MODE;
     arduinoSetup();
-    adsSetup();
+    //adsSetup();
 
     // Setup callbacks for SerialCommand commands
     serialCommand.addCommand("nop", nopCommand);                     // No operation (does nothing)
@@ -514,7 +514,7 @@ void standbyCommand(unsigned char unused1, unsigned char unused2) {
 
 void resetCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
-    adcSendCommand(RESET);
+    adcSendCommand(ADS129x::RESET);
     adsSetup();
     send_response_ok();
 }
