@@ -22,6 +22,7 @@
 #define _STM32_BOARD_H
 
 #include "Arduino.h"
+#include "USBSerial.h"
 #define PIN_LED LED_BLUE
 void SystemClock_Config(void);
 #endif // _ADS_COMMAND_H
