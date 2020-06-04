@@ -25,7 +25,7 @@
 
 #ifndef ADS129x_H
 #define ADS129x_H
-
+#define __cplusplus
 #ifdef __cplusplus
 namespace ADS129x {
 #endif

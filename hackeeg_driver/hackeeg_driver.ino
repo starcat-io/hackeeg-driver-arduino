@@ -145,7 +145,7 @@ void setup() {
 
     protocol_mode = TEXT_MODE;
     arduinoSetup();
-    //adsSetup();
+    adsSetup();
 
     // Setup callbacks for SerialCommand commands
     serialCommand.addCommand("nop", nopCommand);                     // No operation (does nothing)
@@ -215,6 +215,8 @@ void loop() {
             ;
     }
     send_samples();
+    //delay(500);
+    //WiredSerial.println("Hello world!/n");
 }
 
 long hex_to_long(char *digits) {
@@ -713,6 +715,7 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
             delay(500);
         }
     } //error mode
+    //return;
 
     // All GPIO set to output 0x0000: (floating CMOS inputs can flicker on and off, creating noise)
     adcWreg(GPIO, 0);
@@ -732,14 +735,14 @@ void arduinoSetup() {
     pinMode(IPIN_DRDY, INPUT);
     pinMode(PIN_CLKSEL, OUTPUT);// *optional
     pinMode(IPIN_RESET, OUTPUT);// *optional
-    //pinMode(IPIN_PWDN, OUTPUT);// *optional
+    pinMode(IPIN_PWDN, OUTPUT);// *optional
     digitalWrite(PIN_CLKSEL, HIGH); // internal clock
     //start Serial Peripheral Interface
     spiBegin(PIN_CS);
     spiInit(MSBFIRST, SPI_MODE1, SPI_CLOCK_DIVIDER);
     //Start ADS1298
     delay(500); //wait for the ads129n to be ready - it can take a while to charge caps
-    digitalWrite(PIN_CLKSEL, HIGH);// *optional
+    digitalWrite(PIN_CLKSEL, HIGH);// *optional, internal clock
     delay(10); // wait for oscillator to wake up
     digitalWrite(IPIN_PWDN, HIGH); // *optional - turn off power down mode
     digitalWrite(IPIN_RESET, HIGH);

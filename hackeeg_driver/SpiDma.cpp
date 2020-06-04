@@ -41,9 +41,11 @@ void spiInit(uint8_t bitOrder, uint8_t spiMode, uint8_t spiClockDivider) {
 
 /** SPI receive a byte */
 uint8_t spiRec() {
+    uint8_t out = 0;
     noInterrupts();
-    return SPI.transfer(0x00);
+    out = SPI.transfer(0x00);
     interrupts();
+    return out;
 }
 
 /** SPI receive multiple bytes */
@@ -289,5 +291,3 @@ void spiSend(const uint8_t* buf, size_t len) {
   uint8_t b = pSpi->SPI_RDR;
 }
 #endif
-
-
