@@ -22,6 +22,7 @@
 #define _STM32_BOARD_H
 #ifdef _VARIANT_ARDUINO_STM32_
 #include "Arduino.h"
+#include "USBSerial.h"
 #define PIN_LED LED_BLUE
 void SystemClock_Config(void);
 #endif // _VARIANT_ARDUINO_STM32_
