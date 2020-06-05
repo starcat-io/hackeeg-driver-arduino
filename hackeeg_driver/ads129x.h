@@ -129,7 +129,7 @@ enum CONFIG1_bits {
             CONFIG1_const = 0xE0,
 
     // ADS1298
-    /*
+
 HIGH_RES_32k_SPS = HR,
 HIGH_RES_16k_SPS = (HR | DR0),
 HIGH_RES_8k_SPS = (HR | DR1),
@@ -138,17 +138,16 @@ HIGH_RES_2k_SPS = (HR | DR2),
 HIGH_RES_1k_SPS = (HR | DR2 | DR0),
 HIGH_RES_500_SPS = (HR | DR2 | DR1),
 LOW_POWR_250_SPS = (DR2 | DR1)
-    */
 
     // ADS1299
-            HIGH_RES_16k_SPS = HR,
+/*  HIGH_RES_16k_SPS = HR,
     HIGH_RES_8k_SPS = (HR | DR0),
     HIGH_RES_4k_SPS = (HR | DR1),
     HIGH_RES_2k_SPS = (HR | DR1 | DR0),
     HIGH_RES_1k_SPS = (HR | DR2),
     HIGH_RES_500_SPS = (HR | DR2 | DR0),
     HIGH_RES_250_SPS = (HR | DR2 | DR1),
-
+*/
 };
 
 enum CONFIG2_bits {

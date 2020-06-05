@@ -720,6 +720,16 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
     // All GPIO set to output 0x0000: (floating CMOS inputs can flicker on and off, creating noise)
     adcWreg(GPIO, 0);
     adcWreg(CONFIG3,PD_REFBUF | CONFIG3_const);
+    delayMicroseconds(1);
+    adcWreg(CONFIG1,CONFIG1_const|HIGH_RES_500_SPS);  //HR 32kHz
+    delayMicroseconds(1);
+    adcWreg(LOFF,FLEAD_OFF1 | (~FLEAD_OFF0&LOFF_const));
+
+    for (int i = 1; i <= max_channels; i++) {
+        delayMicroseconds(1);
+        adcWreg(CHnSET + i,0x10);//Init PGA to 1
+    }
+
     digitalWrite(PIN_START, HIGH);
 }
 
