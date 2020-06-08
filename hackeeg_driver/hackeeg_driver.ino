@@ -130,6 +130,7 @@ void rdataCommand(unsigned char unused1, unsigned char unused2);
 void base64ModeOnCommand(unsigned char unused1, unsigned char unused2);
 void hexModeOnCommand(unsigned char unused1, unsigned char unused2);
 void helpCommand(unsigned char unused1, unsigned char unused2);
+void setSampleRateCommand(unsigned char unused1, unsigned char unused2);
 void readRegisterCommand(unsigned char unused1, unsigned char unused2);
 void writeRegisterCommand(unsigned char unused1, unsigned char unused2);
 void readRegisterCommandDirect(unsigned char register_number, unsigned char unused1);
@@ -144,6 +145,7 @@ void setup() {
     digitalWrite(PIN_LED, LOW);   // default to LED off
 
     protocol_mode = TEXT_MODE;
+    delay(1000);
     arduinoSetup();
     adsSetup();
 
@@ -172,7 +174,8 @@ void setup() {
     serialCommand.addCommand("wreg", writeRegisterCommand);          // Write ADS129x register, arguments in hex
     serialCommand.addCommand("base64", base64ModeOnCommand);         // RDATA commands send base64 encoded data - default
     serialCommand.addCommand("hex", hexModeOnCommand);               // RDATA commands send hex encoded data
-    serialCommand.addCommand("help", helpCommand);                   // Print list of commands
+    serialCommand.addCommand("help", helpCommand);                   // Print list of commands 
+    serialCommand.addCommand("ssr", setSampleRateCommand);           // Set Sample Rate
     serialCommand.setDefaultHandler(unrecognized);                   // Handler for any command that isn't matched
 
     // Setup callbacks for JsonCommand commands
@@ -196,6 +199,7 @@ void setup() {
     jsonCommand.addCommand("rreg", readRegisterCommandDirect);       // Read ADS129x register
     jsonCommand.addCommand("wreg", writeRegisterCommandDirect);      // Write ADS129x register
     jsonCommand.addCommand("rdata", rdataCommand);                   // Read one sample of data from each active channel
+    jsonCommand.addCommand("ssr", setSampleRateCommand);           // Set Sample Rate
     jsonCommand.setDefaultHandler(unrecognizedJsonLines);            // Handler for any command that isn't matched
 
     WiredSerial.println("Ready");
@@ -422,6 +426,79 @@ void helpCommand(unsigned char unused1, unsigned char unused2) {
         serialCommand.printCommands();
         WiredSerial.println();
     }
+}
+void setSampleRateCommand(unsigned char unused1, unsigned char unused2)
+{
+    using namespace ADS129x;
+    char *arg1;
+    char *error;
+    char registerValue;
+    long freq;
+    arg1 = serialCommand.next();
+    if (arg1 != NULL)
+    {
+        freq = strtol(arg1, &error, 10);
+        if (*error != 0)
+        { // error
+            freq = 0;
+        }
+        switch (freq)
+        {
+            //Fmod = Fclk/4; Fclk = 2.048MHz
+        case 250:
+            //Fclk/8192 = 250
+            registerValue = (CONFIG1_const & (~HR)) | LOW_POWR_250_SPS;
+            break;
+        case 500:
+            //Fclk/4096 = 500
+            registerValue = CONFIG1_const | HIGH_RES_500_SPS;
+            break;
+        case 1000:
+            //Fclk/2048 = 1000
+            registerValue = CONFIG1_const | HIGH_RES_1k_SPS;
+            break;
+        case 2000:
+            //Fclk/1024 = 2000
+            registerValue = CONFIG1_const | HIGH_RES_2k_SPS;
+            break;
+        case 4000:
+            //Fclk/512 = 4000
+            registerValue = CONFIG1_const | HIGH_RES_4k_SPS;
+            break;
+        case 8000:
+            //Fclk/2048 = 8000
+            registerValue = CONFIG1_const | HIGH_RES_1k_SPS;
+            break;
+        case 16000:
+            //Fclk/1024 = 16000
+            registerValue = CONFIG1_const | HIGH_RES_2k_SPS;
+            break;
+        case 32000:
+            //Fclk/512 = 32000
+            registerValue = CONFIG1_const | HIGH_RES_4k_SPS;
+            break;
+
+        default:
+            WiredSerial.println("405 Error: expected sample rate is:");
+            WiredSerial.println("250,500,1000,2000,4000,8000,16000,32000");
+            WiredSerial.println("Please input one of them.");
+            return;
+            break;
+        }
+        adcWreg(CONFIG1, CONFIG1_const | registerValue);
+        WiredSerial.print("200 Ok");
+        WiredSerial.print(" (Write Register ");
+        output_hex_byte(CONFIG1);
+        WiredSerial.print(" ");
+        output_hex_byte(registerValue);
+        WiredSerial.print(") ");
+        WiredSerial.println();
+    }
+    else
+    {
+        WiredSerial.println("404 Error: value argument missing.");
+    }
+    WiredSerial.println();
 }
 
 void readRegisterCommand(unsigned char unused1, unsigned char unused2) {
