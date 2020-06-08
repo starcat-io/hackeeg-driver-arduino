@@ -78,7 +78,7 @@ union {
     char sample_number_bytes[SAMPLE_NUMBER_SIZE_IN_BYTES];
     unsigned long sample_number = 0;
 } sample_number_union;
-
+long sample_rate = 500;
 // SPI input buffer
 uint8_t spi_bytes[SPI_BUFFER_SIZE];
 uint8_t spi_data_available;
@@ -311,6 +311,8 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
         WiredSerial.println(max_channels);
         WiredSerial.print("Number of active channels: ");
         WiredSerial.println(num_active_channels);
+        WiredSerial.print("ADC sample rate: ");
+        WiredSerial.println(sample_rate);
         WiredSerial.println();
         return;
     }
@@ -325,6 +327,7 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
     status_info["hardware_type"] = hardware_type;
     status_info["max_channels"] = max_channels;
     status_info["active_channels"] = num_active_channels;
+    status_info["sample_rate"] = sample_rate;
     switch (protocol_mode) {
         case JSONLINES_MODE:
         case MESSAGEPACK_MODE:
@@ -485,6 +488,7 @@ void setSampleRateCommand(unsigned char unused1, unsigned char unused2)
             return;
             break;
         }
+        sample_rate = freq;
         adcWreg(CONFIG1, CONFIG1_const | registerValue);
         WiredSerial.print("200 Ok");
         WiredSerial.print(" (Write Register ");
