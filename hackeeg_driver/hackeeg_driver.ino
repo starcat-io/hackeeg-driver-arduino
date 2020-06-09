@@ -30,6 +30,7 @@
 #include "Base64.h"
 #include "SpiDma.h"
 #include "STM32Board.h"
+#include "DataConvert.h"
 
 #define BAUD_RATE 2000000     // WiredSerial ignores this and uses the maximum rate
 #define WiredSerial SerialUSB // use the Arduino Due's Native USB port
@@ -84,6 +85,7 @@ uint8_t spi_bytes[SPI_BUFFER_SIZE];
 uint8_t spi_data_available;
 
 // char buffer to send via USB
+char pre_output_buffer[SPI_BUFFER_SIZE];
 char output_buffer[OUTPUT_BUFFER_SIZE];
 
 const char *hardware_type = "unknown";
@@ -728,9 +730,12 @@ inline void send_sample(void) {
             if (base64_mode) {
                 base64_encode(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
             } else {
-                encode_hex(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+                //encode_hex(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+                encode_multi_plot(pre_output_buffer,(char *) spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES+3, max_channels);
+                //encode_hex(output_buffer, pre_output_buffer, max_channels*4+2);
             }
-            WiredSerial.println(output_buffer);
+            //WiredSerial.println(output_buffer);
+            WiredSerial.write(pre_output_buffer,16);
             break;
         case MESSAGEPACK_MODE:
             send_sample_messagepack(num_timestamped_spi_bytes);
