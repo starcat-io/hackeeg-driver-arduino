@@ -32,7 +32,7 @@
 #include "STM32Board.h"
 #include "DataConvert.h"
 
-#define BAUD_RATE 2000000     // WiredSerial ignores this and uses the maximum rate
+#define BAUD_RATE 4000000     // WiredSerial ignores this and uses the maximum rate
 #define WiredSerial SerialUSB // use the Arduino Due's Native USB port
 
 #define SPI_BUFFER_SIZE 200
@@ -63,6 +63,7 @@ int num_spi_bytes = 0;
 int num_timestamped_spi_bytes = 0;
 boolean is_rdatac = false;
 boolean base64_mode = true;
+boolean hex_mode = false;
 
 char hexDigits[] = "0123456789ABCDEF";
 
@@ -85,7 +86,6 @@ uint8_t spi_bytes[SPI_BUFFER_SIZE];
 uint8_t spi_data_available;
 
 // char buffer to send via USB
-char pre_output_buffer[SPI_BUFFER_SIZE];
 char output_buffer[OUTPUT_BUFFER_SIZE];
 
 const char *hardware_type = "unknown";
@@ -131,6 +131,7 @@ void sdatacCommand(unsigned char unused1, unsigned char unused2);
 void rdataCommand(unsigned char unused1, unsigned char unused2);
 void base64ModeOnCommand(unsigned char unused1, unsigned char unused2);
 void hexModeOnCommand(unsigned char unused1, unsigned char unused2);
+void bianryFrameModeOnCommand(unsigned char unused1, unsigned char unused2);
 void helpCommand(unsigned char unused1, unsigned char unused2);
 void setSampleRateCommand(unsigned char unused1, unsigned char unused2);
 void readRegisterCommand(unsigned char unused1, unsigned char unused2);
@@ -175,7 +176,8 @@ void setup() {
     serialCommand.addCommand("rreg", readRegisterCommand);           // Read ADS129x register, argument in hex, print contents in hex
     serialCommand.addCommand("wreg", writeRegisterCommand);          // Write ADS129x register, arguments in hex
     serialCommand.addCommand("base64", base64ModeOnCommand);         // RDATA commands send base64 encoded data - default
-    serialCommand.addCommand("hex", hexModeOnCommand);               // RDATA commands send hex encoded data
+    serialCommand.addCommand("hex", hexModeOnCommand);               // RDATA commands send hex encoded data 
+    serialCommand.addCommand("binary", bianryFrameModeOnCommand);    // RDATA commands send binary frame data 
     serialCommand.addCommand("help", helpCommand);                   // Print list of commands 
     serialCommand.addCommand("ssr", setSampleRateCommand);           // Set Sample Rate
     serialCommand.setDefaultHandler(unrecognized);                   // Handler for any command that isn't matched
@@ -414,12 +416,20 @@ void boardLedOffCommand(unsigned char unused1, unsigned char unused2) {
 
 void base64ModeOnCommand(unsigned char unused1, unsigned char unused2) {
     base64_mode = true;
+    hex_mode = !base64_mode;
     send_response(RESPONSE_OK, "Base64 mode on - rdata command will respond with base64 encoded data.");
 }
 
 void hexModeOnCommand(unsigned char unused1, unsigned char unused2) {
     base64_mode = false;
+    hex_mode = !base64_mode;
     send_response(RESPONSE_OK, "Hex mode on - rdata command will respond with hex encoded data");
+}
+
+void bianryFrameModeOnCommand(unsigned char unused1, unsigned char unused2) {
+    base64_mode = false;
+    hex_mode = false;
+    send_response(RESPONSE_OK, "Binary frame mode on - rdata command will respond with bianry frame encoded data");
 }
 
 void helpCommand(unsigned char unused1, unsigned char unused2) {
@@ -729,13 +739,15 @@ inline void send_sample(void) {
         case TEXT_MODE:
             if (base64_mode) {
                 base64_encode(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+                WiredSerial.println(output_buffer);
+            } else if(hex_mode) {
+                encode_hex(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+                WiredSerial.println(output_buffer);
             } else {
-                //encode_hex(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
-                encode_multi_plot(pre_output_buffer,(char *) spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES+3, max_channels);
-                //encode_hex(output_buffer, pre_output_buffer, max_channels*4+2);
+                encode_multi_plot(output_buffer,(char *) spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES+3, max_channels);
+                WiredSerial.write(output_buffer,18);
             }
-            //WiredSerial.println(output_buffer);
-            WiredSerial.write(pre_output_buffer,16);
+            
             break;
         case MESSAGEPACK_MODE:
             send_sample_messagepack(num_timestamped_spi_bytes);
