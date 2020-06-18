@@ -32,7 +32,7 @@ const int PIN_CLKSEL = 48;
 const int IPIN_RESET = 6;
 
 const int PIN_START = 9;
-const int IPIN_DRDY = 8;   // board 0: JP1, pos. 1
+const int IPIN_DRDY = 24;   // board 0: JP1, pos. 1
 //const int IPIN_DRDY = 25; // board 1: JP1, pos. 2
 //const int IPIN_DRDY = 26; // board 2: JP1, pos. 3
 //const int IPIN_DRDY = 27; // board 3: JP1, pos. 4
