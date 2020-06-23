@@ -18,6 +18,7 @@
    along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
 */
+#include <Arduino.h>
 
 #include <SPI.h>
 #include <stdlib.h>
@@ -28,9 +29,10 @@
 #include "JsonCommand.h"
 #include "Base64.h"
 #include "SpiDma.h"
+#include "STM32Board.h"
+#include "DataConvert.h"
 
-
-#define BAUD_RATE 2000000     // WiredSerial ignores this and uses the maximum rate
+#define BAUD_RATE 4000000     // WiredSerial ignores this and uses the maximum rate
 #define WiredSerial SerialUSB // use the Arduino Due's Native USB port
 
 #define SPI_BUFFER_SIZE 200
@@ -61,6 +63,7 @@ int num_spi_bytes = 0;
 int num_timestamped_spi_bytes = 0;
 boolean is_rdatac = false;
 boolean base64_mode = true;
+boolean hex_mode = false;
 
 char hexDigits[] = "0123456789ABCDEF";
 
@@ -77,7 +80,7 @@ union {
     char sample_number_bytes[SAMPLE_NUMBER_SIZE_IN_BYTES];
     unsigned long sample_number = 0;
 } sample_number_union;
-
+long sample_rate = 500;
 // SPI input buffer
 uint8_t spi_bytes[SPI_BUFFER_SIZE];
 uint8_t spi_data_available;
@@ -107,6 +110,7 @@ void unrecognized(const char *);
 void unrecognizedJsonLines(const char *);
 
 void nopCommand(unsigned char unused1, unsigned char unused2);
+void microsCommand(unsigned char unused1, unsigned char unused2);
 void versionCommand(unsigned char unused1, unsigned char unused2);
 void statusCommand(unsigned char unused1, unsigned char unused2);
 void serialNumberCommand(unsigned char unused1, unsigned char unused2);
@@ -127,12 +131,16 @@ void sdatacCommand(unsigned char unused1, unsigned char unused2);
 void rdataCommand(unsigned char unused1, unsigned char unused2);
 void base64ModeOnCommand(unsigned char unused1, unsigned char unused2);
 void hexModeOnCommand(unsigned char unused1, unsigned char unused2);
+void bianryFrameModeOnCommand(unsigned char unused1, unsigned char unused2);
 void helpCommand(unsigned char unused1, unsigned char unused2);
+void setSampleRateCommand(unsigned char unused1, unsigned char unused2);
 void readRegisterCommand(unsigned char unused1, unsigned char unused2);
 void writeRegisterCommand(unsigned char unused1, unsigned char unused2);
-void readRegisterCommandDirect(unsigned char register_number);
+void readRegisterCommandDirect(unsigned char register_number, unsigned char unused1);
 void writeRegisterCommandDirect(unsigned char register_number, unsigned char register_value);
 
+inline void send_samples(void);
+inline void send_sample(void);
 
 void setup() {
     WiredSerial.begin(BAUD_RATE);
@@ -140,6 +148,7 @@ void setup() {
     digitalWrite(PIN_LED, LOW);   // default to LED off
 
     protocol_mode = TEXT_MODE;
+    delay(1000);
     arduinoSetup();
     adsSetup();
 
@@ -167,8 +176,10 @@ void setup() {
     serialCommand.addCommand("rreg", readRegisterCommand);           // Read ADS129x register, argument in hex, print contents in hex
     serialCommand.addCommand("wreg", writeRegisterCommand);          // Write ADS129x register, arguments in hex
     serialCommand.addCommand("base64", base64ModeOnCommand);         // RDATA commands send base64 encoded data - default
-    serialCommand.addCommand("hex", hexModeOnCommand);               // RDATA commands send hex encoded data
-    serialCommand.addCommand("help", helpCommand);                   // Print list of commands
+    serialCommand.addCommand("hex", hexModeOnCommand);               // RDATA commands send hex encoded data 
+    serialCommand.addCommand("binary", bianryFrameModeOnCommand);    // RDATA commands send binary frame data 
+    serialCommand.addCommand("help", helpCommand);                   // Print list of commands 
+    serialCommand.addCommand("ssr", setSampleRateCommand);           // Set Sample Rate
     serialCommand.setDefaultHandler(unrecognized);                   // Handler for any command that isn't matched
 
     // Setup callbacks for JsonCommand commands
@@ -192,6 +203,7 @@ void setup() {
     jsonCommand.addCommand("rreg", readRegisterCommandDirect);       // Read ADS129x register
     jsonCommand.addCommand("wreg", writeRegisterCommandDirect);      // Write ADS129x register
     jsonCommand.addCommand("rdata", rdataCommand);                   // Read one sample of data from each active channel
+    jsonCommand.addCommand("ssr", setSampleRateCommand);           // Set Sample Rate
     jsonCommand.setDefaultHandler(unrecognizedJsonLines);            // Handler for any command that isn't matched
 
     WiredSerial.println("Ready");
@@ -211,6 +223,8 @@ void loop() {
             ;
     }
     send_samples();
+    //delay(500);
+    //WiredSerial.println("Hello world!/n");
 }
 
 long hex_to_long(char *digits) {
@@ -242,14 +256,6 @@ void encode_hex(char *output, char *input, int input_len) {
     output[count] = 0;
 }
 
-void send_response_ok() {
-    send_response(RESPONSE_OK, STATUS_TEXT_OK);
-}
-
-void send_response_error() {
-    send_response(RESPONSE_ERROR, STATUS_TEXT_ERROR);
-}
-
 void send_response(int status_code, const char *status_text) {
     switch (protocol_mode) {
         case TEXT_MODE:
@@ -268,6 +274,14 @@ void send_response(int status_code, const char *status_text) {
             // unknown protocol
             ;
     }
+}
+
+void send_response_ok() {
+    send_response(RESPONSE_OK, STATUS_TEXT_OK);
+}
+
+void send_response_error() {
+    send_response(RESPONSE_ERROR, STATUS_TEXT_ERROR);
 }
 
 void send_jsonlines_data(int status_code, char data, char *status_text) {
@@ -301,6 +315,8 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
         WiredSerial.println(max_channels);
         WiredSerial.print("Number of active channels: ");
         WiredSerial.println(num_active_channels);
+        WiredSerial.print("ADC sample rate: ");
+        WiredSerial.println(sample_rate);
         WiredSerial.println();
         return;
     }
@@ -315,6 +331,7 @@ void statusCommand(unsigned char unused1, unsigned char unused2) {
     status_info["hardware_type"] = hardware_type;
     status_info["max_channels"] = max_channels;
     status_info["active_channels"] = num_active_channels;
+    status_info["sample_rate"] = sample_rate;
     switch (protocol_mode) {
         case JSONLINES_MODE:
         case MESSAGEPACK_MODE:
@@ -399,12 +416,20 @@ void boardLedOffCommand(unsigned char unused1, unsigned char unused2) {
 
 void base64ModeOnCommand(unsigned char unused1, unsigned char unused2) {
     base64_mode = true;
+    hex_mode = !base64_mode;
     send_response(RESPONSE_OK, "Base64 mode on - rdata command will respond with base64 encoded data.");
 }
 
 void hexModeOnCommand(unsigned char unused1, unsigned char unused2) {
     base64_mode = false;
+    hex_mode = !base64_mode;
     send_response(RESPONSE_OK, "Hex mode on - rdata command will respond with hex encoded data");
+}
+
+void bianryFrameModeOnCommand(unsigned char unused1, unsigned char unused2) {
+    base64_mode = false;
+    hex_mode = false;
+    send_response(RESPONSE_OK, "Binary frame mode on - rdata command will respond with bianry frame encoded data");
 }
 
 void helpCommand(unsigned char unused1, unsigned char unused2) {
@@ -416,6 +441,80 @@ void helpCommand(unsigned char unused1, unsigned char unused2) {
         serialCommand.printCommands();
         WiredSerial.println();
     }
+}
+void setSampleRateCommand(unsigned char unused1, unsigned char unused2)
+{
+    using namespace ADS129x;
+    char *arg1;
+    char *error;
+    char registerValue;
+    long freq;
+    arg1 = serialCommand.next();
+    if (arg1 != NULL)
+    {
+        freq = strtol(arg1, &error, 10);
+        if (*error != 0)
+        { // error
+            freq = 0;
+        }
+        switch (freq)
+        {
+            //Fmod = Fclk/4; Fclk = 2.048MHz
+        case 250:
+            //Fclk/8192 = 250
+            registerValue = (CONFIG1_const & (~HR)) | LOW_POWR_250_SPS;
+            break;
+        case 500:
+            //Fclk/4096 = 500
+            registerValue = CONFIG1_const | HIGH_RES_500_SPS;
+            break;
+        case 1000:
+            //Fclk/2048 = 1000
+            registerValue = CONFIG1_const | HIGH_RES_1k_SPS;
+            break;
+        case 2000:
+            //Fclk/1024 = 2000
+            registerValue = CONFIG1_const | HIGH_RES_2k_SPS;
+            break;
+        case 4000:
+            //Fclk/512 = 4000
+            registerValue = CONFIG1_const | HIGH_RES_4k_SPS;
+            break;
+        case 8000:
+            //Fclk/2048 = 8000
+            registerValue = CONFIG1_const | HIGH_RES_1k_SPS;
+            break;
+        case 16000:
+            //Fclk/1024 = 16000
+            registerValue = CONFIG1_const | HIGH_RES_2k_SPS;
+            break;
+        case 32000:
+            //Fclk/512 = 32000
+            registerValue = CONFIG1_const | HIGH_RES_4k_SPS;
+            break;
+
+        default:
+            WiredSerial.println("405 Error: expected sample rate is:");
+            WiredSerial.println("250,500,1000,2000,4000,8000,16000,32000");
+            WiredSerial.println("Please input one of them.");
+            return;
+            break;
+        }
+        sample_rate = freq;
+        adcWreg(CONFIG1, CONFIG1_const | registerValue);
+        WiredSerial.print("200 Ok");
+        WiredSerial.print(" (Write Register ");
+        output_hex_byte(CONFIG1);
+        WiredSerial.print(" ");
+        output_hex_byte(registerValue);
+        WiredSerial.print(") ");
+        WiredSerial.println();
+    }
+    else
+    {
+        WiredSerial.println("404 Error: value argument missing.");
+    }
+    WiredSerial.println();
 }
 
 void readRegisterCommand(unsigned char unused1, unsigned char unused2) {
@@ -510,7 +609,7 @@ void standbyCommand(unsigned char unused1, unsigned char unused2) {
 
 void resetCommand(unsigned char unused1, unsigned char unused2) {
     using namespace ADS129x;
-    adcSendCommand(RESET);
+    adcSendCommand(ADS129x::RESET);
     adsSetup();
     send_response_ok();
 }
@@ -590,15 +689,6 @@ void drdy_interrupt() {
     spi_data_available = 1;
 }
 
-inline void send_samples(void) {
-    if (!is_rdatac) return;
-    if (spi_data_available) {
-        spi_data_available = 0;
-        receive_sample();
-        send_sample();
-    }
-}
-
 inline void receive_sample() {
     digitalWrite(PIN_CS, LOW);
     delayMicroseconds(10);
@@ -619,29 +709,6 @@ inline void receive_sample() {
     sample_number_union.sample_number++;
 }
 
-inline void send_sample(void) {
-    switch (protocol_mode) {
-        case JSONLINES_MODE:
-            WiredSerial.write(json_rdatac_header);
-            base64_encode(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
-            WiredSerial.write(output_buffer);
-            WiredSerial.write(json_rdatac_footer);
-            WiredSerial.write("\n");
-            break;
-        case TEXT_MODE:
-            if (base64_mode) {
-                base64_encode(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
-            } else {
-                encode_hex(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
-            }
-            WiredSerial.println(output_buffer);
-            break;
-        case MESSAGEPACK_MODE:
-            send_sample_messagepack(num_timestamped_spi_bytes);
-            break;
-    }
-}
-
 
 inline void send_sample_json(int num_bytes) {
     StaticJsonDocument<1024> doc;
@@ -659,6 +726,44 @@ inline void send_sample_messagepack(int num_bytes) {
     WiredSerial.write((uint8_t) num_bytes);
     WiredSerial.write(spi_bytes, num_bytes);
 }
+
+inline void send_sample(void) {
+    switch (protocol_mode) {
+        case JSONLINES_MODE:
+            WiredSerial.write(json_rdatac_header);
+            base64_encode(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+            WiredSerial.write(output_buffer);
+            WiredSerial.write(json_rdatac_footer);
+            WiredSerial.write("\n");
+            break;
+        case TEXT_MODE:
+            if (base64_mode) {
+                base64_encode(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+                WiredSerial.println(output_buffer);
+            } else if(hex_mode) {
+                encode_hex(output_buffer, (char *) spi_bytes, num_timestamped_spi_bytes);
+                WiredSerial.println(output_buffer);
+            } else {
+                encode_multi_plot(output_buffer,(char *) spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES+3, max_channels);
+                WiredSerial.write(output_buffer,18);
+            }
+            
+            break;
+        case MESSAGEPACK_MODE:
+            send_sample_messagepack(num_timestamped_spi_bytes);
+            break;
+    }
+}
+
+inline void send_samples(void) {
+    if (!is_rdatac) return;
+    if (spi_data_available) {
+        spi_data_available = 0;
+        receive_sample();
+        send_sample();
+    }
+}
+
 
 void adsSetup() { //default settings for ADS1298 and compatible chips
     using namespace ADS129x;
@@ -708,10 +813,21 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
             delay(500);
         }
     } //error mode
+    //return;
 
     // All GPIO set to output 0x0000: (floating CMOS inputs can flicker on and off, creating noise)
     adcWreg(GPIO, 0);
     adcWreg(CONFIG3,PD_REFBUF | CONFIG3_const);
+    delayMicroseconds(1);
+    adcWreg(CONFIG1,CONFIG1_const|HIGH_RES_500_SPS);  //HR 32kHz
+    delayMicroseconds(1);
+    adcWreg(LOFF,FLEAD_OFF1 | (~FLEAD_OFF0&LOFF_const));
+
+    for (int i = 1; i <= max_channels; i++) {
+        delayMicroseconds(1);
+        adcWreg(CHnSET + i,0x10);//Init PGA to 1
+    }
+
     digitalWrite(PIN_START, HIGH);
 }
 
@@ -727,14 +843,14 @@ void arduinoSetup() {
     pinMode(IPIN_DRDY, INPUT);
     pinMode(PIN_CLKSEL, OUTPUT);// *optional
     pinMode(IPIN_RESET, OUTPUT);// *optional
-    //pinMode(IPIN_PWDN, OUTPUT);// *optional
+    pinMode(IPIN_PWDN, OUTPUT);// *optional
     digitalWrite(PIN_CLKSEL, HIGH); // internal clock
     //start Serial Peripheral Interface
     spiBegin(PIN_CS);
     spiInit(MSBFIRST, SPI_MODE1, SPI_CLOCK_DIVIDER);
     //Start ADS1298
     delay(500); //wait for the ads129n to be ready - it can take a while to charge caps
-    digitalWrite(PIN_CLKSEL, HIGH);// *optional
+    digitalWrite(PIN_CLKSEL, HIGH);// *optional, internal clock
     delay(10); // wait for oscillator to wake up
     digitalWrite(IPIN_PWDN, HIGH); // *optional - turn off power down mode
     digitalWrite(IPIN_RESET, HIGH);

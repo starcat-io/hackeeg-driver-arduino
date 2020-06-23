@@ -62,11 +62,12 @@ int adcRreg(int reg) {
     uint8_t out = 0;
     digitalWrite(PIN_CS, LOW);
     spiSend(ADS129x::RREG | reg);
-    delayMicroseconds(2);
+    //delayMicroseconds(2);
     spiSend(0);    // number of registers to be read/written – 1
-    delayMicroseconds(2);
+    //delayMicroseconds(2);
+    //out = SPI.transfer(0x00);
     out = spiRec();
-    delayMicroseconds(1);
+    //delayMicroseconds(1);
     digitalWrite(PIN_CS, HIGH);
     return ((int) out);
 }

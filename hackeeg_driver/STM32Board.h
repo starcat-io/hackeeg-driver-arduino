@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2013-2019 by Adam Feuer <adam@adamfeuer.com>
+ * STM32Board.h
+ *
+ * Copyright (c) 2013-2020 by kylongmu <kylongmu@msn.com>
  *
  * This library is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -15,28 +17,13 @@
  * along with this library.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
-#ifndef SPI_DMA_H
-#define SPI_DMA_H
 
-// SPI clock divider - 1-255, divides 84Mhz system clock 
-// 21 = 4 Mhz
-// 6 = 14 Mhz
-// 5 = 16.8 Mhz
-// 4 = 21 Mhz
-// ADS1299 needs the SPI clock to be 20Mhz or less
-
-#define SPI_CLOCK_DIVIDER SPI_CLOCK_DIV16
-
-void spiBegin(uint8_t csPin);
-
-void spiInit(uint8_t bitOrder, uint8_t spiMode, uint8_t spiClockDivider);
-
-uint8_t spiRec();
-
-uint8_t spiRec(uint8_t *buf, size_t len);
-
-void spiSend(uint8_t b);
-
-void spiSend(const uint8_t *buf, size_t len);
-
-#endif  // SPI_DMA_H
+#ifndef _STM32_BOARD_H
+#define _STM32_BOARD_H
+#ifdef _VARIANT_ARDUINO_STM32_
+#include "Arduino.h"
+#include "USBSerial.h"
+#define PIN_LED LED_BLUE
+void SystemClock_Config(void);
+#endif // _VARIANT_ARDUINO_STM32_
+#endif // _STM32_BOARD_H
