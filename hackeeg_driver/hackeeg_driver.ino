@@ -234,16 +234,7 @@ void boardLedOffCommand(unsigned char unused1, unsigned char unused2) {
     send_response_ok();
 }
 
-void blinkBoardLedCommand(unsigned char unused1, unsigned char unused2) {
-//    int state = adcRreg(ADS129x::GPIO);
-//    state = state & 0xF7;
-//    state = state | 0x80;
-//    adcWreg(ADS129x::GPIO, state);
-//    delay(1000);
-//    state = adcRreg(ADS129x::GPIO);
-//    state = state & 0x77;
-//    adcWreg(ADS129x::GPIO, state);
-
+void blinkBoardLed() {
     int numberOfBlinks = 10;
     for (int i=0; i < numberOfBlinks; i++) {
       int state = adcRreg(ADS129x::GPIO);
@@ -256,6 +247,10 @@ void blinkBoardLedCommand(unsigned char unused1, unsigned char unused2) {
       adcWreg(ADS129x::GPIO, state);
       delay(200);
     }
+}
+
+void blinkBoardLedCommand(unsigned char unused1, unsigned char unused2) {
+    blinkBoardLed();
     send_response_ok();
 }
 
