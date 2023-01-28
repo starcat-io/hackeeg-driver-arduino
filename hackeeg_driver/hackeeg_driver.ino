@@ -23,9 +23,7 @@
 #include <stdlib.h>
 #include "adsCommand.h"
 #include "ads129x.h"
-#include "SerialCommand.h"
 #include "SpiDma.h"
-
 
 #define BAUD_RATE 2000000     // WiredSerial ignores this and uses the maximum rate
 #define WiredSerial SerialUSB // use the Arduino Due's Native USB port
@@ -74,8 +72,6 @@ const char *hardware_type = "unknown";
 const char *board_name = "HackEEG";
 const char *maker_name = "Starcat LLC";
 const char *driver_version = "v0.3.0-minimal-test-01";
-
-SerialCommand serialCommand;
 
 void arduinoSetup();
 void adsSetup();
