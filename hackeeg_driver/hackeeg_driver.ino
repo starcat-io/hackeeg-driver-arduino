@@ -19,11 +19,48 @@
 
 */
 
+/*
+ * minimal blink board light only driver
+ * for porting to NuttX
+ * 
+ */
+
+
 #include <SPI.h>
 #include <stdlib.h>
-#include "adsCommand.h"
+#include "Arduino.h"
 #include "ads129x.h"
 #include "SpiDma.h"
+
+// constants define pins on Arduino 
+
+// Arduino Due
+// HackEEG Shield v1.5.0
+const int IPIN_PWDN = 33;
+const int PIN_CLKSEL = 48;
+const int IPIN_RESET = 47;
+
+const int PIN_START = 59;
+const int IPIN_DRDY = 24;   // board 0: JP1, pos. 1
+//const int IPIN_DRDY = 25; // board 1: JP1, pos. 2
+//const int IPIN_DRDY = 26; // board 2: JP1, pos. 3
+//const int IPIN_DRDY = 27; // board 3: JP1, pos. 4
+
+const int PIN_CS = 23;   // board 0: JP2, pos. 3
+//const int PIN_CS = 52; // board 1: JP2, pos. 4
+//const int PIN_CS = 10; // board 2: JP2, pos. 5
+//const int PIN_CS = 4;  // board 3: JP2, pos. 6
+
+//const int PIN_DOUT = 11;  //SPI out
+//const int PIN_DIN = 12;   //SPI in
+//const int PIN_SCLK = 13;  //SPI clock
+
+void adcWreg(int reg, int val);
+void adcSendCommand(int cmd);
+void adcSendCommandLeaveCsActive(int cmd);
+int adcRreg(int reg);
+void arduinoSetup();
+void adsSetup();
 
 #define BAUD_RATE 2000000     // WiredSerial ignores this and uses the maximum rate
 #define WiredSerial SerialUSB // use the Arduino Due's Native USB port
@@ -73,8 +110,44 @@ const char *board_name = "HackEEG";
 const char *maker_name = "Starcat LLC";
 const char *driver_version = "v0.3.0-minimal-test-01";
 
-void arduinoSetup();
-void adsSetup();
+
+void adcSendCommand(int cmd) {
+    digitalWrite(PIN_CS, LOW);
+    spiSend(cmd);
+    delayMicroseconds(1);
+    digitalWrite(PIN_CS, HIGH);
+}
+
+void adcSendCommandLeaveCsActive(int cmd) {
+    digitalWrite(PIN_CS, LOW);
+    spiSend(cmd);
+}
+
+void adcWreg(int reg, int val) {
+    //see pages 40,43 of datasheet -
+    digitalWrite(PIN_CS, LOW);
+    spiSend(ADS129x::WREG | reg);
+    delayMicroseconds(2);
+    spiSend(0);    // number of registers to be read/written – 1
+    delayMicroseconds(2);
+    spiSend(val);
+    delayMicroseconds(1);
+    digitalWrite(PIN_CS, HIGH);
+}
+
+int adcRreg(int reg) {
+    uint8_t out = 0;
+    digitalWrite(PIN_CS, LOW);
+    spiSend(ADS129x::RREG | reg);
+    delayMicroseconds(2);
+    spiSend(0);    // number of registers to be read/written – 1
+    delayMicroseconds(2);
+    out = spiRec();
+    delayMicroseconds(1);
+    digitalWrite(PIN_CS, HIGH);
+    return ((int) out);
+}
+
 
 void setup() {
     WiredSerial.begin(BAUD_RATE);
