@@ -28,9 +28,20 @@
 
 #include <SPI.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include "Arduino.h"
 #include "ads129x.h"
-#include "SpiDma.h"
+#include <SPI.h>
+
+// SPI clock divider - 1-255, divides 84Mhz system clock 
+// 21 = 4 Mhz
+// 6 = 14 Mhz
+// 5 = 16.8 Mhz
+// 4 = 21 Mhz
+// ADS1299 needs the SPI clock to be 20Mhz or less
+
+#define SPI_CLOCK_DIVIDER 5
 
 // constants define pins on Arduino 
 
@@ -111,6 +122,56 @@ const char *maker_name = "Starcat LLC";
 const char *driver_version = "v0.3.0-minimal-test-01";
 
 
+//////////////////////////////////
+// SPI adaptation layer
+
+
+void spiBegin(uint8_t csPin) {
+    SPI.begin();
+    pinMode(csPin, OUTPUT);
+}
+
+void spiInit(uint8_t bitOrder, uint8_t spiMode, uint8_t spiClockDivider) {
+    SPI.setBitOrder((BitOrder) bitOrder);  // MSBFIRST or LSBFIRST
+    SPI.setDataMode(spiMode);             // SPI_MODE0, SPI_MODE1; SPI_MODE2; SPI_MODE3
+    SPI.setClockDivider(spiClockDivider);
+}
+
+/** SPI receive a byte */
+uint8_t spiRec() {
+    noInterrupts();
+    return SPI.transfer(0x00);
+    interrupts();
+}
+
+/** SPI receive multiple bytes */
+uint8_t spiRec(uint8_t *buf, size_t len) {
+    memset(buf, 0, len);
+    noInterrupts();
+    SPI.transfer((void *)buf, len);
+    interrupts();
+    return 0;
+}
+
+/** SPI send a byte */
+void spiSend(uint8_t b) {
+    noInterrupts();
+    SPI.transfer(b);
+    interrupts();
+}
+
+/** SPI send multiple bytes */
+void spiSend(const uint8_t *buf, size_t len) {
+    noInterrupts();
+    SPI.transfer((void *)buf, len);
+    interrupts();
+}
+
+
+//////////////////////////////
+// ADS1299 send/receive
+
+
 void adcSendCommand(int cmd) {
     digitalWrite(PIN_CS, LOW);
     spiSend(cmd);
@@ -148,6 +209,8 @@ int adcRreg(int reg) {
     return ((int) out);
 }
 
+///////////////////////////
+// main part of program
 
 void setup() {
     WiredSerial.begin(BAUD_RATE);
