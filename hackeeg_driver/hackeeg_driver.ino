@@ -66,19 +66,9 @@ union {
     unsigned long timestamp;
 } timestamp_union;
 
-// sample number counter
-#define SAMPLE_NUMBER_SIZE_IN_BYTES 4
-union {
-    char sample_number_bytes[SAMPLE_NUMBER_SIZE_IN_BYTES];
-    unsigned long sample_number = 0;
-} sample_number_union;
-
 // SPI input buffer
 uint8_t spi_bytes[SPI_BUFFER_SIZE];
 uint8_t spi_data_available;
-
-// char buffer to send via USB
-char output_buffer[OUTPUT_BUFFER_SIZE];
 
 const char *hardware_type = "unknown";
 const char *board_name = "HackEEG";
@@ -89,18 +79,6 @@ SerialCommand serialCommand;
 
 void arduinoSetup();
 void adsSetup();
-void detectActiveChannels();
-void unrecognized(const char *);
-
-void nopCommand(unsigned char unused1, unsigned char unused2);
-void versionCommand(unsigned char unused1, unsigned char unused2);
-void statusCommand(unsigned char unused1, unsigned char unused2);
-void ledOnCommand(unsigned char unused1, unsigned char unused2);
-void ledOffCommand(unsigned char unused1, unsigned char unused2);
-void boardLedOffCommand(unsigned char unused1, unsigned char unused2);
-void boardLedOnCommand(unsigned char unused1, unsigned char unused2);
-void helpCommand(unsigned char unused1, unsigned char unused2);
-
 
 void setup() {
     WiredSerial.begin(BAUD_RATE);
@@ -110,129 +88,13 @@ void setup() {
     protocol_mode = TEXT_MODE;
     arduinoSetup();
     adsSetup();
-
-    // Setup callbacks for SerialCommand commands
-    serialCommand.addCommand("nop", nopCommand);                     // No operation (does nothing)
-    serialCommand.addCommand("version", versionCommand);             // Echos the driver version number
-    serialCommand.addCommand("status", statusCommand);               // Echos the driver status
-    serialCommand.addCommand("ledon", ledOnCommand);                 // Turns Arduino Due onboard LED on
-    serialCommand.addCommand("ledoff", ledOffCommand);               // Turns Arduino Due onboard LED off
-    serialCommand.addCommand("boardledoff", boardLedOffCommand);     // Turns HackEEG ADS1299 GPIO4 LED off
-    serialCommand.addCommand("boardledon", boardLedOnCommand);       // Turns HackEEG ADS1299 GPIO4 LED on
-    serialCommand.addCommand("blinkboardled", blinkBoardLedCommand); // Blinks HackEEG ADS1299 GPIO4 LED
-    serialCommand.addCommand("help", helpCommand);                   // Print list of commands
-    serialCommand.setDefaultHandler(unrecognized);                   // Handler for any command that isn't matched
     WiredSerial.println("Ready");
 }
 
 void loop() {
-    switch (protocol_mode) {
-        case TEXT_MODE:
-            serialCommand.readSerial();
-            break;
-        default:
-            // do nothing
-            ;
-    }
+    blinkBoardLed();
 }
 
-long hex_to_long(char *digits) {
-    using namespace std;
-    char *error;
-    long n = strtol(digits, &error, 16);
-    if (*error != 0) {
-        return -1; // error
-    } else {
-        return n;
-    }
-}
-
-void output_hex_byte(int value) {
-    int clipped = value & 0xff;
-    char charValue[3];
-    sprintf(charValue, "%02X", clipped);
-    WiredSerial.print(charValue);
-}
-
-void encode_hex(char *output, char *input, int input_len) {
-    register int count = 0;
-    for (register int i = 0; i < input_len; i++) {
-        register uint8_t low_nybble = input[i] & 0x0f;
-        register uint8_t highNybble = input[i] >> 4;
-        output[count++] = hexDigits[highNybble];
-        output[count++] = hexDigits[low_nybble];
-    }
-    output[count] = 0;
-}
-
-void send_response_ok() {
-    send_response(RESPONSE_OK, STATUS_TEXT_OK);
-}
-
-void send_response_error() {
-    send_response(RESPONSE_ERROR, STATUS_TEXT_ERROR);
-}
-
-void send_response(int status_code, const char *status_text) {
-    switch (protocol_mode) {
-        case TEXT_MODE:
-            char response[128];
-            sprintf(response, "%d %s", status_code, status_text);
-            WiredSerial.println(response);
-            break;
-        default:
-            // unknown protocol
-            ;
-    }
-}
-
-void versionCommand(unsigned char unused1, unsigned char unused2) {
-    send_response(RESPONSE_OK, driver_version);
-}
-
-void statusCommand(unsigned char unused1, unsigned char unused2) {
-    WiredSerial.println("200 Ok");
-    WiredSerial.print("Driver version: ");
-    WiredSerial.println(driver_version);
-    WiredSerial.print("Board name: ");
-    WiredSerial.println(board_name);
-    WiredSerial.print("Board maker: ");
-    WiredSerial.println(maker_name);
-    WiredSerial.print("Hardware type: ");
-    WiredSerial.println(hardware_type);
-    WiredSerial.print("Max channels: ");
-    WiredSerial.println(max_channels);
-    return;
-}
-
-void nopCommand(unsigned char unused1, unsigned char unused2) {
-    send_response_ok();
-}
-
-void ledOnCommand(unsigned char unused1, unsigned char unused2) {
-    digitalWrite(PIN_LED, HIGH);
-    send_response_ok();
-}
-
-void ledOffCommand(unsigned char unused1, unsigned char unused2) {
-    digitalWrite(PIN_LED, LOW);
-    send_response_ok();
-}
-
-void boardLedOnCommand(unsigned char unused1, unsigned char unused2) {
-    int state = adcRreg(ADS129x::GPIO);
-    state = state & 0xF7;
-    state = state | 0x80;
-    adcWreg(ADS129x::GPIO, state);
-    send_response_ok();
-}
-
-void boardLedOffCommand(unsigned char unused1, unsigned char unused2) {
-    int state = adcRreg(ADS129x::GPIO);
-    state = state & 0x77;
-    adcWreg(ADS129x::GPIO, state);
-    send_response_ok();
-}
 
 void blinkBoardLed() {
     int numberOfBlinks = 10;
@@ -249,23 +111,6 @@ void blinkBoardLed() {
     }
 }
 
-void blinkBoardLedCommand(unsigned char unused1, unsigned char unused2) {
-    blinkBoardLed();
-    send_response_ok();
-}
-
-// This gets set as the default handler, and gets called when no other command matches.
-void unrecognized(const char *command) {
-    WiredSerial.println("406 Error: Unrecognized command.");
-    WiredSerial.println();
-}
-
-void helpCommand(unsigned char unused1, unsigned char unused2) {
-    WiredSerial.println("200 Ok");
-    WiredSerial.println("Available commands: ");
-    serialCommand.printCommands();
-    WiredSerial.println();
-}
 
 void drdy_interrupt() {
     spi_data_available = 1;
@@ -311,7 +156,6 @@ void adsSetup() { //default settings for ADS1298 and compatible chips
             max_channels = 0;
     }
     num_spi_bytes = (3 * (max_channels + 1)); //24-bits header plus 24-bits per channel
-    num_timestamped_spi_bytes = num_spi_bytes + TIMESTAMP_SIZE_IN_BYTES + SAMPLE_NUMBER_SIZE_IN_BYTES;
     if (max_channels == 0) { //error mode
         while (1) {
             digitalWrite(PIN_LED, HIGH);
